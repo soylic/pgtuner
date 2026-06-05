@@ -21,6 +21,22 @@ func TestRunVersion(t *testing.T) {
 	}
 }
 
+func TestRunFormatBogus(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	// An invalid -format value must be rejected with exit code 2 before any
+	// connection attempt, matching the -min-level / -sort error style.
+	code := run([]string{"-format", "bogus"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code: got %d want 2 (stderr: %s)", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "-format") {
+		t.Errorf("expected stderr to mention -format, got: %q", stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("unexpected stdout: %q", stdout.String())
+	}
+}
+
 func TestBuildDSN(t *testing.T) {
 	cases := []struct {
 		name       string

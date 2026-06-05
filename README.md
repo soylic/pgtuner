@@ -39,9 +39,9 @@ go install github.com/OpenRemedy/pgtuner/cmd/pgtuner@latest
 | `-port` | `5432` | PostgreSQL port |
 | `-user` | `""` | PostgreSQL user |
 | `-dbname` | `""` | PostgreSQL database name |
-| `-json` | false | Output the report as machine-readable JSON |
+| `-format` | `terminal` | Output format: `terminal` (alias `text`), `json`, `csv`, or `markdown` (alias `md`). Case-insensitive |
 | `-os-inspect` | false | Gather host memory and sysctl facts (Linux only; must run on the DB host) |
-| `-no-color` | false | Disable ANSI colour in terminal output |
+| `-no-color` | false | Disable ANSI colour in terminal output. Only affects `-format terminal`; it is a no-op for `json`/`csv`/`markdown` |
 | `-min-level` | `ok` | Only show advice at or above this severity (`ok`/`info`/`todo`/`warn`/`bad`/`unknown`). Filters the displayed advice only; the summary counts and grade always reflect the full set. |
 | `-sort` | `section` | Advice ordering: `section` (group by section, first-seen order) or `severity` (a flat list ordered Bad→Warn→Todo→Info→OK→Unknown, each item still labelled with its section) |
 | `-all-databases` | false | Run per-database checks against every connectable, non-template database; cluster-wide checks run once. Each per-database finding is tagged with its database. |
@@ -90,7 +90,13 @@ pgtuner -dsn 'postgres://analyst@db.example.com:5432/mydb'
 pgtuner -host db.example.com -user analyst -dbname mydb
 
 # Machine-readable JSON output (useful in CI or for downstream tooling)
-pgtuner -dsn 'postgres://analyst@db.example.com:5432/mydb' -json
+pgtuner -dsn 'postgres://analyst@db.example.com:5432/mydb' -format json
+
+# CSV table of findings (one row per advice item; no grade/summary)
+pgtuner -dsn 'postgres://analyst@db.example.com:5432/mydb' -format csv
+
+# Markdown report (paste straight into a PR or issue)
+pgtuner -dsn 'postgres://analyst@db.example.com:5432/mydb' -format markdown
 
 # With OS-level inspection (run on the database host itself)
 pgtuner -dsn 'postgres://analyst@localhost:5432/mydb' -os-inspect
@@ -102,7 +108,7 @@ pgtuner -dsn "$DB_DSN" -min-level warn -sort severity
 pgtuner -dsn "$DB_DSN" -all-databases
 
 # Check exit code in a CI pipeline
-pgtuner -dsn "$DB_DSN" -json > report.json || echo "Bad-level advice found"
+pgtuner -dsn "$DB_DSN" -format json > report.json || echo "Bad-level advice found"
 ```
 
 ## Sample Output
@@ -154,7 +160,7 @@ Query Performance) repeat per database with each finding tagged `[db]`:
   [warn]  [postgres] Buffer cache hit ratio is low — Buffer cache hit ratio is 98.85% …
 ```
 
-### JSON (`-json`)
+### JSON (`-format json`)
 
 ```json
 {
@@ -212,6 +218,44 @@ the report adds a top-level `"databases"` array listing every analyzed database:
 
 Cluster-wide findings (and every finding in a default single-database run) omit
 the `database` field; `databases` is omitted entirely without `-all-databases`.
+
+### CSV (`-format csv`)
+
+A clean, importable table of findings — one row per advice item, in the
+displayed order. The header is fixed and the grade/summary are intentionally
+omitted (read those from the terminal or JSON output):
+
+```csv
+database,section,level,title,message,detail,doc_ref
+,Connection,warn,Listening on all interfaces without SSL,"listen_addresses='*' with ssl=off exposes the PostgreSQL port on every network interface without encryption.",Set ssl=on and configure ssl_cert_file/ssl_key_file.,https://www.postgresql.org/docs/current/runtime-config-connection.html
+,Version,ok,PostgreSQL 16 is supported,Running PostgreSQL 16.13; community support continues until 2028-11-09.,,https://www.postgresql.org/support/versioning/
+```
+
+Under `-all-databases` the `database` column carries the per-database tag;
+cluster-wide rows leave it empty.
+
+### Markdown (`-format markdown`)
+
+A report formatted for pasting into a PR or issue. Advice is grouped by section
+(first-seen order) into tables, with Detail/Ref rendered as sub-lines:
+
+```markdown
+# PostgreSQL Tuning Report — server 16.13
+
+**Grade: F**
+
+Summary: 8 ok · 23 info · 0 todo · 1 warn · 0 bad · 0 unknown
+
+### Connection
+
+| Level | Title | Message |
+|-------|-------|---------|
+| warn | Listening on all interfaces without SSL | listen_addresses='*' with ssl=off exposes the PostgreSQL port... |
+
+**Listening on all interfaces without SSL**
+- _Detail:_ Set ssl=on and configure ssl_cert_file/ssl_key_file.
+- _Ref:_ https://www.postgresql.org/docs/current/runtime-config-connection.html
+```
 
 ## PostgreSQL Support Matrix
 
@@ -339,8 +383,8 @@ recommendations.
 ## Validation
 
 `scripts/version-matrix.sh` spins up disposable Docker containers for PG 15,
-16, 17, and 18 on alternate ports (5515–5518), runs `pgtuner -json` against
-each, validates the JSON, and checks that no `unknown`-level advice appears in
+16, 17, and 18 on alternate ports (5515–5518), runs `pgtuner -format json`
+against each, validates the JSON, and checks that no `unknown`-level advice appears in
 the summary. It exits with `MATRIX PASS` when all versions pass.
 
 ```bash

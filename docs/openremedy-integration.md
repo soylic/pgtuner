@@ -88,14 +88,14 @@ tracking across runs.
   mode when a single OpenRemedy-managed PostgreSQL instance hosts multiple
   application databases.
 
-### Mode B — Subprocess with `-json`
+### Mode B — Subprocess with `-format json`
 
-Run the `pgtuner` binary with `-json` and parse its stdout. This is appropriate
+Run the `pgtuner` binary with `-format json` and parse its stdout. This is appropriate
 when the OpenRemedy component is written in a language other than Go, or when
 keeping pgtuner at a separate release cadence is preferred.
 
 ```bash
-pgtuner -dsn "$DSN" -json > report.json
+pgtuner -dsn "$DSN" -format json > report.json
 exit_code=$?
 # exit_code 0 = no bad advice; 1 = bad advice present; 2 = tool error
 ```

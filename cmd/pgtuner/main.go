@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"strings"
 
 	"github.com/OpenRemedy/pgtuner/internal/report"
 	"github.com/OpenRemedy/pgtuner/pkg/pgtuner"
@@ -31,9 +32,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	port := fs.Int("port", 5432, "PostgreSQL port")
 	user := fs.String("user", "", "PostgreSQL user")
 	dbname := fs.String("dbname", "", "PostgreSQL database name")
-	jsonOut := fs.Bool("json", false, "output report as JSON")
+	format := fs.String("format", "terminal", "output format: terminal (alias text), json, csv, or markdown (alias md)")
 	osInspect := fs.Bool("os-inspect", false, "gather OS-level facts (Linux only)")
-	noColor := fs.Bool("no-color", false, "disable ANSI color in terminal output")
+	noColor := fs.Bool("no-color", false, "disable ANSI color in terminal output (only affects -format terminal; no-op for json/csv/markdown)")
 	showVersion := fs.Bool("version", false, "print tool version and exit")
 	minLevel := fs.String("min-level", "ok", "only show advice at or above this severity (ok/info/todo/warn/bad/unknown); summary stays full")
 	sortBy := fs.String("sort", "section", "advice ordering: section (group by section) or severity (Bad→…→Unknown)")
@@ -61,6 +62,19 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case "section", "severity":
 	default:
 		fmt.Fprintf(stderr, "pgtuner: -sort: invalid value %q (want section or severity)\n", *sortBy)
+		return 2
+	}
+
+	// Validate and normalize -format early (case-insensitive; resolve aliases).
+	outFormat := strings.ToLower(*format)
+	switch outFormat {
+	case "text":
+		outFormat = "terminal"
+	case "md":
+		outFormat = "markdown"
+	case "terminal", "json", "csv", "markdown":
+	default:
+		fmt.Fprintf(stderr, "pgtuner: -format: invalid value %q (want terminal, json, csv, or markdown)\n", *format)
 		return 2
 	}
 
@@ -92,14 +106,26 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// Apply min-level display filter. Summary stays full-cluster truth.
 	rep.Advice = pgtuner.FilterByMinLevel(rep.Advice, min)
 
-	if *jsonOut {
+	switch outFormat {
+	case "json":
 		if err := report.WriteJSON(stdout, rep); err != nil {
 			fmt.Fprintf(stderr, "pgtuner: write JSON: %v\n", err)
 			return 2
 		}
-	} else {
+	case "csv":
+		if err := report.WriteCSV(stdout, rep); err != nil {
+			fmt.Fprintf(stderr, "pgtuner: write CSV: %v\n", err)
+			return 2
+		}
+	case "markdown":
+		if err := report.WriteMarkdown(stdout, rep); err != nil {
+			fmt.Fprintf(stderr, "pgtuner: write Markdown: %v\n", err)
+			return 2
+		}
+	default: // terminal
 		// ColorEnabled only works with *os.File; fall back to no-color when
-		// stdout is not a real file (e.g. in tests).
+		// stdout is not a real file (e.g. in tests). -no-color affects only the
+		// terminal renderer.
 		color := false
 		if !*noColor {
 			if f, ok := stdout.(*os.File); ok {

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # version-matrix.sh — Spin disposable PG instances (14-18) on alt ports and run
-# pgtuner -json against each. Verifies valid JSON and no "column does not exist"
+# pgtuner -format json against each. Verifies valid JSON and no "column does not exist"
 # or SQL query errors from the version-branched checks. Leaves oremedy-test-pg
 # (and any container on :5432) untouched.
 #
@@ -76,7 +76,7 @@ for v in 14 15 16 17 18; do
 
   echo ">> PG${v} running pgtuner"
   set +e
-  "$BIN" -dsn "$dsn" -json >"$out" 2>"$err_out"
+  "$BIN" -dsn "$dsn" -format json >"$out" 2>"$err_out"
   rc=$?
   set -e
 

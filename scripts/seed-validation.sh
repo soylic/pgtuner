@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # seed-validation.sh — Spin a disposable PG16 on port 5516, load seed-validation.sql,
-# run pgtuner -json, and assert:
+# run pgtuner -format json, and assert:
 #   1. pg_stat_user_tables shows dead tuples on pgtuner_bloat (direct psql check).
 #   2. pg_stat_database shows temp_files > 0 (direct psql check).
 #   3. pgtuner autovacuum advice mentions the bloated table (JSON check).
@@ -108,15 +108,15 @@ echo "   ok: pg_stat_database.temp_files=${temp_files} > 0"
 
 # ---------------------------------------------------------------------------
 # Assertion 3: pgtuner autovacuum advice mentions pgtuner_bloat.
-# Run pgtuner -json and parse the advice array.
+# Run pgtuner -format json and parse the advice array.
 # ---------------------------------------------------------------------------
-echo ">> running pgtuner -json"
+echo ">> running pgtuner -format json"
 DSN="postgres://t:pw@localhost:${PORT}/t"
 OUT="${OUTDIR}/seed-validation.json"
 ERR="${OUTDIR}/seed-validation.err"
 
 set +e
-"$BIN" -dsn "$DSN" -json >"$OUT" 2>"$ERR"
+"$BIN" -dsn "$DSN" -format json >"$OUT" 2>"$ERR"
 rc=$?
 set -e
 
@@ -328,7 +328,7 @@ else
   ERR2="${OUTDIR}/seed-validation-idle.err"
 
   set +e
-  "$BIN" -dsn "$DSN" -json >"$OUT2" 2>"$ERR2"
+  "$BIN" -dsn "$DSN" -format json >"$OUT2" 2>"$ERR2"
   rc2=$?
   set -e
 
@@ -463,9 +463,9 @@ PGSS_DSN="postgres://t:pw@localhost:${PGSS_PORT}/t"
 PGSS_OUT="${OUTDIR}/seed-validation-pgss.json"
 PGSS_ERR="${OUTDIR}/seed-validation-pgss.err"
 
-echo "   running pgtuner -json against pg_stat_statements container"
+echo "   running pgtuner -format json against pg_stat_statements container"
 set +e
-"$BIN" -dsn "$PGSS_DSN" -json >"$PGSS_OUT" 2>"$PGSS_ERR"
+"$BIN" -dsn "$PGSS_DSN" -format json >"$PGSS_OUT" 2>"$PGSS_ERR"
 pgss_rc=$?
 set -e
 

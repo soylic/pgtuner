@@ -4,13 +4,19 @@ package tuner_test
 
 import (
 	"context"
+	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/OpenRemedy/pgtuner/pkg/pgtuner"
 	"github.com/OpenRemedy/pgtuner/pkg/tuner"
 )
+
+// serverVersionRE matches a major.minor version string (e.g. "16.13", "18.0").
+// The CI matrix runs against PG 14-18, so the test must not pin a single major.
+var serverVersionRE = regexp.MustCompile(`^\d+\.\d+`)
 
 func TestAnalyzeIntegration(t *testing.T) {
 	dsn := os.Getenv("PGTUNER_TEST_DSN")
@@ -24,8 +30,8 @@ func TestAnalyzeIntegration(t *testing.T) {
 		t.Fatalf("Analyze: %v", err)
 	}
 
-	if !strings.HasPrefix(rep.ServerVersion, "16") {
-		t.Errorf("ServerVersion: got %q, want prefix %q", rep.ServerVersion, "16")
+	if !serverVersionRE.MatchString(rep.ServerVersion) {
+		t.Errorf("ServerVersion: got %q, want non-empty major.minor shape (e.g. %q)", rep.ServerVersion, "16.13")
 	}
 
 	if len(rep.Advice) == 0 {
@@ -90,8 +96,26 @@ func TestAnalyzeAllDatabasesIntegration(t *testing.T) {
 		t.Error("expected at least one per-database-tagged advice item, got none")
 	}
 
-	// Sanity: the connection database 'openremedy' should be present.
-	if !dbSet["openremedy"] {
-		t.Errorf("expected 'openremedy' in Databases, got %v", rep.Databases)
+	// Sanity: the database we connected to should appear in Databases. Derive
+	// it from the DSN rather than pinning a single cluster's database name, so
+	// this passes under the CI matrix (DB "pgtuner") and the dev cluster
+	// (DB "openremedy") alike.
+	if connDB := dbFromDSN(dsn); connDB != "" && !dbSet[connDB] {
+		t.Errorf("expected connection database %q in Databases, got %v", connDB, rep.Databases)
 	}
+}
+
+// dbFromDSN extracts the database name from a DSN. It handles URL-style DSNs
+// (postgres://user:pw@host:port/dbname) and keyword DSNs (dbname=foo ...).
+// Returns "" when no database name can be determined.
+func dbFromDSN(dsn string) string {
+	if u, err := url.Parse(dsn); err == nil && u.Scheme != "" {
+		return strings.TrimPrefix(u.Path, "/")
+	}
+	for _, field := range strings.Fields(dsn) {
+		if name, ok := strings.CutPrefix(field, "dbname="); ok {
+			return name
+		}
+	}
+	return ""
 }

@@ -5,8 +5,13 @@ package pg
 import (
 	"context"
 	"os"
+	"regexp"
 	"testing"
 )
+
+// liveVersionRE matches a major.minor version string. The CI matrix runs
+// against PG 14-18, so we assert a sane shape rather than a single major.
+var liveVersionRE = regexp.MustCompile(`^\d+\.\d+$`)
 
 func TestConnectLive(t *testing.T) {
 	dsn := os.Getenv("PGTUNER_TEST_DSN")
@@ -18,7 +23,11 @@ func TestConnectLive(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close(context.Background())
-	if !c.Version.AtLeast(15, 0) {
+	// 14 is the oldest version pgtuner supports (and the CI matrix floor).
+	if !c.Version.AtLeast(14, 0) {
 		t.Fatalf("unexpected version %s", c.Version)
+	}
+	if !liveVersionRE.MatchString(c.Version.String()) {
+		t.Fatalf("version string %q does not match major.minor shape", c.Version)
 	}
 }

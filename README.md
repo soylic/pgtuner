@@ -1,5 +1,7 @@
 # pgtuner
 
+[![CI](https://github.com/OpenRemedy/pgtuner/actions/workflows/ci.yml/badge.svg)](https://github.com/OpenRemedy/pgtuner/actions/workflows/ci.yml)
+
 A PostgreSQL configuration tuning advisor — connects to a running server,
 inspects its settings and runtime statistics, and reports actionable advice
 across 22 check areas with graded severity levels and an overall A–F grade.

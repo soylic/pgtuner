@@ -12,6 +12,12 @@ func TestRunVersion(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code: got %d want 0 (stderr: %s)", code, stderr.String())
 	}
+	// version is a build-time-injectable var (default "dev", overridden via
+	// -ldflags). Assert -version prints exactly whatever it is set to, and that
+	// it is non-empty — robust to any release tag.
+	if version == "" {
+		t.Fatal("version must not be empty")
+	}
 	got := strings.TrimSpace(stdout.String())
 	if got != version {
 		t.Errorf("version output: got %q want %q", got, version)

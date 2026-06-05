@@ -15,7 +15,9 @@ import (
 	"github.com/OpenRemedy/pgtuner/pkg/tuner"
 )
 
-const version = "0.1.0-dev"
+// version is the tool version. It defaults to "dev" and is overridden at
+// build time via -ldflags "-X main.version=<tag>" (see the release workflow).
+var version = "dev"
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))

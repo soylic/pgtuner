@@ -1,0 +1,6 @@
+# Version-matrix test output (per-version JSON and stderr logs from version-matrix.sh).
+# These are ephemeral outputs; only the harness scripts are committed.
+scripts/matrix-output/
+
+# Built binary
+/pgtuner

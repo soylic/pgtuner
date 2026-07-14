@@ -4,3 +4,11 @@ scripts/matrix-output/
 
 # Built binary
 /pgtuner
+
+# Release artefacts — built by CI, never committed. Scoped to dist/ only,
+# not a bare "*.deb"/"*.rpm" — see openremedy-client's .gitignore for why
+# that bit before (matched committed source templates by name coincidence).
+dist/*.deb
+dist/*.rpm
+dist/*.tar.gz
+dist/*.zip

@@ -1,0 +1,13 @@
+name: test
+# Shadow stub — Gitea Actions falls back to .github/workflows/ for any
+# workflow name not already present under .gitea/workflows/, so the real
+# ci.yml (GitHub-only) would also fire here on every push. manual-only,
+# never auto-fires.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  noop:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "ci.yml runs on GitHub Actions only — this is a Gitea shadow stub."

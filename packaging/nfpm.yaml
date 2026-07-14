@@ -1,0 +1,25 @@
+name: pgtuner
+arch: ${PKG_ARCH}
+platform: linux
+version: ${PKG_VERSION}
+section: admin
+priority: optional
+maintainer: Alberto Ferrer <albertof@barrahome.org>
+homepage: https://github.com/OpenRemedy/pgtuner
+license: Apache-2.0
+description: |
+  pgtuner — a PostgreSQL configuration tuning advisor.
+  Connects to a running server, inspects its settings and runtime
+  statistics, and reports actionable advice across 22 check areas with
+  graded severity levels and an overall A-F grade.
+
+contents:
+  - src: ./pgtuner
+    dst: /usr/local/bin/pgtuner
+    file_info: { mode: 0755 }
+  - src: ./README.md
+    dst: /usr/share/doc/pgtuner/README.md
+    file_info: { mode: 0644 }
+  - src: ./LICENSE
+    dst: /usr/share/doc/pgtuner/LICENSE
+    file_info: { mode: 0644 }

@@ -1,7 +1,6 @@
 # pgtuner
 
 [![CI](https://gitea.local.barrahome.org/OpenRemedy/pgtuner/actions/workflows/ci.yml/badge.svg?branch=main)](https://gitea.local.barrahome.org/OpenRemedy/pgtuner/actions?workflow=ci.yml)
-[![Release](https://gitea.local.barrahome.org/OpenRemedy/pgtuner/actions/workflows/release.yml/badge.svg?branch=main)](https://gitea.local.barrahome.org/OpenRemedy/pgtuner/actions?workflow=release.yml)
 
 A PostgreSQL configuration tuning advisor — connects to a running server,
 inspects its settings and runtime statistics, and reports actionable advice

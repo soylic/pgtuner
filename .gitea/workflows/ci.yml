@@ -1,13 +1,48 @@
-name: test
-# Shadow stub — Gitea Actions falls back to .github/workflows/ for any
-# workflow name not already present under .gitea/workflows/, so the real
-# ci.yml (GitHub-only) would also fire here on every push. manual-only,
-# never auto-fires.
+name: CI
+
 on:
-  workflow_dispatch: {}
+  push:
+    branches: [main]
 
 jobs:
-  noop:
+  build-test:
     runs-on: ubuntu-latest
     steps:
-      - run: echo "ci.yml runs on GitHub Actions only — this is a Gitea shadow stub."
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - run: go build ./...
+      - run: go vet ./...
+      - run: go test ./...
+
+  integration:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        pg: ["14", "15", "16", "17", "18"]
+    services:
+      postgres:
+        image: postgres:${{ matrix.pg }}-alpine
+        env:
+          POSTGRES_USER: pgtuner
+          POSTGRES_PASSWORD: pgtuner
+          POSTGRES_DB: pgtuner
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pgtuner"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - run: go test -tags integration ./...
+        env:
+          PGTUNER_TEST_DSN: postgres://pgtuner:pgtuner@localhost:5432/pgtuner

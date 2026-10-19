@@ -2,16 +2,25 @@
 
 [![CI](https://github.com/soylic/pgtuner/actions/workflows/ci.yml/badge.svg)](https://github.com/soylic/pgtuner/actions/workflows/ci.yml)
 
-pgtuner connects to a running PostgreSQL server, reads its settings and runtime
-statistics, and tells you what to change. Each finding has a severity and a link
-to the PostgreSQL documentation. The report ends with an A to F grade.
+pgtuner is a command-line advisor for PostgreSQL 14 to 18. You point it at a
+running server. It reads the settings and the runtime statistics and runs 23
+groups of checks. Then it tells you what to change and why.
 
-It also tells you where the server sits. It shows if the server is a primary,
-a standby or a cascading standby, and which nodes replicate from it. It shows
-if Patroni, repmgr, pg_auto_failover or Citus manages it. It shows if the
-server is a hosted service such as RDS or Cloud SQL.
-
-pgtuner only reads. It never changes a setting.
+- **Findings with a reason.** Each finding has a severity (`ok`, `info`, `todo`,
+  `warn`, `bad`). The message names the setting and its current value and says
+  what to change. A link goes to the PostgreSQL documentation page for it.
+- **A grade.** The report ends with a grade from A to F. You can see at a
+  glance if a server got better or worse.
+- **Where the server sits.** pgtuner shows if the server is a primary, a standby
+  or a cascading standby, which nodes replicate from it, and how far they lag.
+  It shows if Patroni, repmgr, pg_auto_failover or Citus manages the cluster.
+  It shows if the server is a hosted service such as RDS, Cloud SQL, Azure,
+  Neon or AlloyDB. Then it does not tell you to edit a setting you cannot reach.
+- **Made for pipelines.** Every finding has a stable ID. You can ignore one
+  finding or a group, set the level that fails a build, and compare two
+  reports. The output is terminal text, JSON, CSV or Markdown.
+- **Safe on production.** pgtuner only reads. The session is read-only and
+  every query has a time limit. pgtuner never changes a setting.
 
 ## Install
 

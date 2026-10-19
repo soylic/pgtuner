@@ -1,7 +1,5 @@
 # pgtuner
 
-[![CI](https://github.com/soylic/pgtuner/actions/workflows/ci.yml/badge.svg)](https://github.com/soylic/pgtuner/actions/workflows/ci.yml)
-
 pgtuner is a command-line advisor for PostgreSQL 14 to 18. You point it at a
 running server. It reads the settings and the runtime statistics and runs 23
 groups of checks. Then it tells you what to change and why.

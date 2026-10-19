@@ -1,400 +1,321 @@
 # pgtuner
 
-[![CI](https://gitea.local.barrahome.org/OpenRemedy/pgtuner/actions/workflows/ci.yml/badge.svg?branch=main)](https://gitea.local.barrahome.org/OpenRemedy/pgtuner/actions?workflow=ci.yml)
+[![CI](https://github.com/soylic/pgtuner/actions/workflows/ci.yml/badge.svg)](https://github.com/soylic/pgtuner/actions/workflows/ci.yml)
 
-A PostgreSQL configuration tuning advisor — connects to a running server,
-inspects its settings and runtime statistics, and reports actionable advice
-across 22 check areas with graded severity levels and an overall A–F grade.
+pgtuner connects to a running PostgreSQL server, reads its settings and runtime
+statistics, and tells you what to change. Each finding has a severity and a link
+to the PostgreSQL documentation. The report ends with an A to F grade.
 
-## License
+It also tells you where the server sits. It shows if the server is a primary,
+a standby or a cascading standby, and which nodes replicate from it. It shows
+if Patroni, repmgr, pg_auto_failover or Citus manages it. It shows if the
+server is a hosted service such as RDS or Cloud SQL.
 
-Apache-2.0. Copyright 2026 OpenRemedy. See `LICENSE`.
+pgtuner only reads. It never changes a setting.
 
-## Requirements
+## Install
 
-- Go 1.25+ (build from source) or a pre-built binary
-- Network access to the PostgreSQL server
-- A database user with `pg_monitor` membership or equivalent read access
+Download a binary, `.deb` or `.rpm` from the
+[releases page](https://github.com/soylic/pgtuner/releases). Each release
+includes a `SHA256SUMS` file.
 
-## Install / Build
-
-```bash
-git clone https://github.com/OpenRemedy/pgtuner
-cd pgtuner
-go build -o pgtuner ./cmd/pgtuner
-```
-
-Or install directly:
+Or build it. You need Go 1.25 or later:
 
 ```bash
-go install github.com/OpenRemedy/pgtuner/cmd/pgtuner@latest
+go install github.com/soylic/pgtuner/cmd/pgtuner@latest
 ```
 
-## Usage
+The database user needs `pg_monitor` membership or equivalent read access.
+Some findings need more. Reading `pg_control_system()` for the system identifier
+needs a grant outside superuser, and `pg_stat_activity` shows other users'
+sessions only to `pg_read_all_stats`. Without those, the matching field is
+empty and the rest of the report still works.
 
-### Flags
+## Quick start
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `-dsn` | `""` | libpq connection string, e.g. `postgres://user:pass@host:5432/db` |
-| `-host` | `""` | PostgreSQL host (alternative to `-dsn`) |
-| `-port` | `5432` | PostgreSQL port |
-| `-user` | `""` | PostgreSQL user |
-| `-dbname` | `""` | PostgreSQL database name |
-| `-format` | `terminal` | Output format: `terminal` (alias `text`), `json`, `csv`, or `markdown` (alias `md`). Case-insensitive |
-| `-os-inspect` | false | Gather host memory and sysctl facts (Linux only; must run on the DB host) |
-| `-no-color` | false | Disable ANSI colour in terminal output. Only affects `-format terminal`; it is a no-op for `json`/`csv`/`markdown` |
-| `-min-level` | `ok` | Only show advice at or above this severity (`ok`/`info`/`todo`/`warn`/`bad`/`unknown`). Filters the displayed advice only; the summary counts and grade always reflect the full set. |
-| `-sort` | `section` | Advice ordering: `section` (group by section, first-seen order) or `severity` (a flat list ordered Bad→Warn→Todo→Info→OK→Unknown, each item still labelled with its section) |
-| `-all-databases` | false | Run per-database checks against every connectable, non-template database; cluster-wide checks run once. Each per-database finding is tagged with its database. |
-| `-version` | false | Print the tool version and exit |
-
-When `-dsn` is omitted, pgtuner builds a connection string from any combination
-of `-host`, `-port`, `-user`, and `-dbname`. Remaining connection parameters
-(password, SSL mode, etc.) fall back to the standard `PG*` environment variables
-and `~/.pgpass`.
-
-### Report Grade
-
-Every report carries an overall letter grade (A–F) summarising the server's
-health. It is a pure function of the per-level advice counts:
-
-```
-infoPenalty    = min(2*info, 10)
-unknownPenalty = min(3*unknown, 9)
-score = 100 - 25*bad - 8*warn - infoPenalty - unknownPenalty   (clamped to [0, 100])
-grade = A if score >= 90, B if >= 80, C if >= 70, D if >= 60, else F
+```bash
+pgtuner -dsn 'postgres://analyst@db.example.com:5432/mydb'
 ```
 
-`ok` and `todo` carry no penalty. `bad` is weighted heavily so a single
-`bad`-level finding caps the grade at C (and two reach F); `unknown` carries a
-small penalty as an undetermined coverage gap. The aggregate `info` and
-`unknown` penalties are capped (at 10 and 9 respectively) so a server with no
-`bad` and few `warn` findings cannot fail purely on the volume of informational
-findings. The grade appears in the terminal footer and as `grade` in the JSON
-output.
+The password comes from `PGPASSWORD` or `~/.pgpass`, like any libpq client.
 
-### Exit Codes
+```
+PostgreSQL Tuning Report, server 17.11
+
+=== Findings (by severity) ===
+  (Connection)
+  [warn]  SSL disabled: ssl=off. The server transmits all client traffic (including passwords) in plaintext.
+          Detail: Enable SSL to encrypt client-server traffic.
+          Ref:    https://www.postgresql.org/docs/current/runtime-config-connection.html
+  (Replication)
+  [warn]  Inactive replication slot(s) retain WAL and can fill the disk: pg_replication_slots shows 1 inactive slot(s): pg2. ...
+          Detail: Drop unused slots with SELECT pg_drop_replication_slot('<name>'). ...
+          Ref:    https://www.postgresql.org/docs/current/view-pg-replication-slots.html
+
+Summary:  7 ok  28 info  0 todo  3 warn  0 bad  0 unknown   Grade: D
+```
+
+That output comes from `pgtuner -min-level warn -sort severity`, trimmed.
+
+## Options
+
+| Flag | Default | Meaning |
+|------|---------|---------|
+| `-dsn` | | libpq connection string, such as `postgres://user@host:5432/db` |
+| `-host`, `-port`, `-user`, `-dbname` | `5432` for the port | Build a connection from parts when `-dsn` is empty |
+| `-format` | `terminal` | `terminal` (alias `text`), `json`, `csv` or `markdown` (alias `md`). Case-insensitive |
+| `-os-inspect` | off | Read host memory and sysctl values. Linux only. Run it on the database host |
+| `-no-color` | off | Turn off ANSI color. Affects `terminal` only |
+| `-min-level` | `ok` | Show advice at this level or worse: `ok`, `info`, `todo`, `warn`, `bad`, `unknown`. The summary and grade still count everything |
+| `-sort` | `section` | `section` groups by section. `severity` prints one list, worst first |
+| `-all-databases` | off | Run per-database checks on every connectable, non-template database. Cluster-wide checks run once |
+| `-version` | | Print the version and exit |
+
+When `-dsn` is empty, pgtuner builds one from `-host`, `-port`, `-user` and
+`-dbname`. The password, SSL mode and other parameters come from the `PG*`
+environment variables and `~/.pgpass`.
+
+### Exit codes
 
 | Code | Meaning |
 |------|---------|
-| 0 | Analysis complete; no `bad`-level advice |
-| 1 | Analysis complete; at least one `bad`-level advice was found |
-| 2 | Tool-level error (connection failure, flag parse error, etc.) |
+| 0 | Analysis finished. No `bad` advice |
+| 1 | Analysis finished. At least one `bad` advice |
+| 2 | pgtuner failed: bad flag, no connection, and so on |
 
-### Example Invocations
+The exit code uses the full advice set, even when `-min-level` hides some of it.
 
 ```bash
-# Using a full DSN
-pgtuner -dsn 'postgres://analyst@db.example.com:5432/mydb'
-
-# Using individual flags
-pgtuner -host db.example.com -user analyst -dbname mydb
-
-# Machine-readable JSON output (useful in CI or for downstream tooling)
-pgtuner -dsn 'postgres://analyst@db.example.com:5432/mydb' -format json
-
-# CSV table of findings (one row per advice item; no grade/summary)
-pgtuner -dsn 'postgres://analyst@db.example.com:5432/mydb' -format csv
-
-# Markdown report (paste straight into a PR or issue)
-pgtuner -dsn 'postgres://analyst@db.example.com:5432/mydb' -format markdown
-
-# With OS-level inspection (run on the database host itself)
-pgtuner -dsn 'postgres://analyst@localhost:5432/mydb' -os-inspect
-
-# Show only warnings and worse, ordered by severity
-pgtuner -dsn "$DB_DSN" -min-level warn -sort severity
-
-# Analyze every user database in the cluster (per-database checks tagged per db)
-pgtuner -dsn "$DB_DSN" -all-databases
-
-# Check exit code in a CI pipeline
-pgtuner -dsn "$DB_DSN" -format json > report.json || echo "Bad-level advice found"
+pgtuner -dsn "$DB_DSN" -format json > report.json || echo "bad-level advice found"
 ```
 
-## Sample Output
+## Where is this server in the cluster?
 
-### Terminal (colour disabled)
+Every report includes a Topology section, and the JSON report has `topology`
+and `flavor` objects. pgtuner reads them from the server it connects to. It does
+not connect to other nodes.
 
-```
-PostgreSQL Tuning Report — server 16.13
+| Question | How pgtuner answers it |
+|----------|------------------------|
+| Primary or standby? | `pg_is_in_recovery()` and `pg_stat_replication` |
+| Who feeds this standby? | `pg_stat_wal_receiver`, then `primary_conninfo`. pgtuner reads only the host, port and node name from `primary_conninfo`. It never stores the password |
+| Who replicates from this server? | `pg_stat_replication`: name, address, state and sync state |
+| Is this a cascading standby? | A standby that has its own downstream nodes |
+| Are two nodes in the same cluster? | They share `system_identifier` |
+| Did a failover happen? | The `timeline` number goes up on each promotion |
+| Which tool manages it? | See below |
+| Which distribution is it? | `version()`, `server_version`, provider settings and roles, and `aurora_version()` |
 
-=== Connection ===
-  [warn]  Listening on all interfaces without SSL — listen_addresses='*' with ssl=off exposes the PostgreSQL port on every network interface without encryption.
-          Detail: Set ssl=on and configure ssl_cert_file/ssl_key_file, or restrict listen_addresses to trusted interfaces.
-          Ref:    https://www.postgresql.org/docs/current/runtime-config-connection.html
-  [info]  Cannot verify RAM headroom (no OS facts) — Worst-case backend memory is approximately 0.6 GiB (max_connections=100 × (work_mem=4096 kB + 2 MiB baseline)). Verify this fits within available RAM.
-          Ref:    https://www.postgresql.org/docs/current/runtime-config-resource.html#GUC-WORK-MEM
+**Cluster managers.** Three of them have a catalog that pgtuner can read, so a
+match is `certain` and the report lists the members from that catalog:
 
-=== Version ===
-  [ok]    PostgreSQL 16 is supported — Running PostgreSQL 16.13; community support continues until 2028-11-09.
-          Ref:    https://www.postgresql.org/support/versioning/
+- repmgr: the table `repmgr.nodes`
+- pg_auto_failover: the table `pgautofailover.node`, on the monitor database
+- Citus: the table `pg_dist_node`
 
-=== Memory ===
-  [info]  shared_buffers (no OS facts) — shared_buffers is set to 128 MiB; cannot compute ratio without total RAM.
-          Ref:    https://www.postgresql.org/docs/current/runtime-config-resource.html
+Patroni keeps its state in etcd, Consul or ZooKeeper, not in PostgreSQL. pgtuner
+looks for its marks instead: sessions named `Patroni heartbeat`, and a
+replication slot named like the standby that uses it. A match is `probable` or
+`possible`, never `certain`. The report says so.
 
-=== Cache ===
-  [ok]    Cache hit ratios look healthy — Buffer cache hit ratio is ≥99%, index-block hit ratio is ≥95%, and table-block hit ratio is ≥95% (or no activity to measure). No cache-pressure concerns detected.
-          Ref:    https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STAT-DATABASE-VIEW
+**Distributions.** pgtuner names Aurora, RDS, Cloud SQL, AlloyDB, Azure, Supabase,
+Neon, YugabyteDB, CockroachDB, Greenplum and EDB. It also lists the
+`timescaledb` and `citus` extensions and the packager text in `server_version`,
+for example `Ubuntu 17.11-1.pgdg22.04+2`. On a hosted service the report warns
+that `ALTER SYSTEM` and kernel advice may not apply.
 
-=== WAL ===
-  [info]  WAL compression is disabled — wal_compression=off; enabling it reduces WAL volume (less disk I/O, smaller replication lag) at the cost of a small amount of CPU at WAL-write time.
-          Detail: Consider setting wal_compression=lz4 or wal_compression=zstd for better throughput. Both lz4 and zstd are available on PostgreSQL 15+.
-          Ref:    https://www.postgresql.org/docs/15/runtime-config-wal.html#GUC-WAL-COMPRESSION
+What the tests cover:
 
-...
+| Part | Tested against |
+|------|----------------|
+| Roles, cascade, upstream, downstream, system identifier | A live Patroni 4.1.5 cluster of three nodes with etcd 3.5, one node cascading from another |
+| Patroni marks | The same cluster |
+| repmgr, pg_auto_failover, Citus | Unit tests only. The catalog queries have not run against a real installation |
+| Hosted-service names | Unit tests only. The setting prefixes and role names come from each provider's conventions, which they can change |
 
-Summary:  8 ok  23 info  0 todo  1 warn  0 bad  0 unknown   Grade: F
-```
-
-### Per-database (`-all-databases`)
-
-With `-all-databases`, cluster-wide sections (Connection, Memory, WAL, …) appear
-once, while per-database sections (Cache, Storage, Autovacuum, Schema, Workload,
-Query Performance) repeat per database with each finding tagged `[db]`:
-
-```
-=== Cache ===
-  [ok]    [openremedy] Cache hit ratios look healthy — …
-  [ok]    [openremedy_test] Cache hit ratios look healthy — …
-  [warn]  [postgres] Buffer cache hit ratio is low — Buffer cache hit ratio is 98.85% …
-```
-
-### JSON (`-format json`)
+Example, on a cascading standby managed by Patroni (`-format json`, trimmed):
 
 ```json
 {
-  "server_version": "16.13",
-  "advice": [
-    {
-      "level": "warn",
-      "section": "Connection",
-      "title": "Listening on all interfaces without SSL",
-      "message": "listen_addresses='*' with ssl=off exposes the PostgreSQL port on every network interface without encryption.",
-      "detail": "Set ssl=on and configure ssl_cert_file/ssl_key_file, or restrict listen_addresses to trusted interfaces.",
-      "doc_ref": "https://www.postgresql.org/docs/current/runtime-config-connection.html"
-    },
-    {
-      "level": "ok",
-      "section": "Version",
-      "title": "PostgreSQL 16 is supported",
-      "message": "Running PostgreSQL 16.13; community support continues until 2028-11-09.",
-      "doc_ref": "https://www.postgresql.org/support/versioning/"
+  "topology": {
+    "role": "cascading_standby",
+    "system_identifier": "7698463095641292832",
+    "timeline": 1,
+    "cluster_name": "demo",
+    "node_name": "pg1",
+    "upstream": { "host": "pg2", "port": 5432, "state": "streaming", "slot": "pg1" },
+    "downstream": [
+      { "name": "pg3", "host": "172.23.0.4", "state": "streaming", "sync_state": "async" }
+    ],
+    "manager": {
+      "name": "patroni",
+      "confidence": "probable",
+      "evidence": [
+        "1 session(s) with application_name starting with 'Patroni'",
+        "cluster_name=\"demo\" and a replication slot is named like its standby (pg3, pg1)"
+      ]
     }
-  ],
-  "summary": {
-    "bad": 0,
-    "info": 23,
-    "ok": 8,
-    "todo": 0,
-    "unknown": 0,
-    "warn": 1
   },
-  "grade": "F"
+  "flavor": { "name": "postgresql", "managed": false, "packaging": "Ubuntu 17.11-1.pgdg22.04+2" }
 }
 ```
 
-Under `-all-databases` each per-database finding gains a `"database"` field, and
-the report adds a top-level `"databases"` array listing every analyzed database:
+To see a whole group, run pgtuner on each node and compare `system_identifier`.
 
-```json
-{
-  "server_version": "16.13",
-  "advice": [
-    {
-      "level": "warn",
-      "section": "Cache",
-      "title": "Buffer cache hit ratio is low",
-      "message": "Buffer cache hit ratio is 98.85% …",
-      "doc_ref": "https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STAT-DATABASE-VIEW",
-      "database": "postgres"
-    }
-  ],
-  "summary": { "ok": 30, "info": 40, "warn": 3, "bad": 0, "todo": 0, "unknown": 0 },
-  "grade": "F",
-  "databases": ["openremedy", "openremedy_test", "postgres"]
-}
-```
+## What it checks
 
-Cluster-wide findings (and every finding in a default single-database run) omit
-the `database` field; `databases` is omitted entirely without `-all-databases`.
+pgtuner runs 23 checks. A cluster-wide check reads instance state and runs once.
+A per-database check reads one database. With `-all-databases` it runs once for
+each database, and every finding carries the database name.
 
-### CSV (`-format csv`)
-
-A clean, importable table of findings — one row per advice item, in the
-displayed order. The header is fixed and the grade/summary are intentionally
-omitted (read those from the terminal or JSON output):
-
-```csv
-database,section,level,title,message,detail,doc_ref
-,Connection,warn,Listening on all interfaces without SSL,"listen_addresses='*' with ssl=off exposes the PostgreSQL port on every network interface without encryption.",Set ssl=on and configure ssl_cert_file/ssl_key_file.,https://www.postgresql.org/docs/current/runtime-config-connection.html
-,Version,ok,PostgreSQL 16 is supported,Running PostgreSQL 16.13; community support continues until 2028-11-09.,,https://www.postgresql.org/support/versioning/
-```
-
-Under `-all-databases` the `database` column carries the per-database tag;
-cluster-wide rows leave it empty.
-
-### Markdown (`-format markdown`)
-
-A report formatted for pasting into a PR or issue. Advice is grouped by section
-(first-seen order) into tables, with Detail/Ref rendered as sub-lines:
-
-```markdown
-# PostgreSQL Tuning Report — server 16.13
-
-**Grade: F**
-
-Summary: 8 ok · 23 info · 0 todo · 1 warn · 0 bad · 0 unknown
-
-### Connection
-
-| Level | Title | Message |
-|-------|-------|---------|
-| warn | Listening on all interfaces without SSL | listen_addresses='*' with ssl=off exposes the PostgreSQL port... |
-
-**Listening on all interfaces without SSL**
-- _Detail:_ Set ssl=on and configure ssl_cert_file/ssl_key_file.
-- _Ref:_ https://www.postgresql.org/docs/current/runtime-config-connection.html
-```
-
-## PostgreSQL Support Matrix
-
-| Major | EOL Date | Version-specific handling |
-|-------|----------|--------------------------|
-| 14 | 2026-11-12 | Baseline; `pg_stat_activity`-based stats |
-| 15 | 2027-11-11 | Stats collector moved to shared memory; `stats_temp_directory` removed — pgtuner skips that setting on PG15+ |
-| 16 | 2028-11-09 | `pg_stat_io` available; I/O check uses it for eviction/fsync analysis |
-| 17 | 2029-11-08 | `pg_stat_checkpointer` gains split columns (`num_requested`, `num_timed`, `write_time`, etc.); pgtuner uses the new column names on PG17+ |
-| 18 | 2030-11-14 | Data checksums enabled by default; async I/O (`io_method`) available — pgtuner notes these as positive signals when detected |
-
-Validated against live PG 15, 16, 17, and 18 instances via `scripts/version-matrix.sh`.
-
-## What It Checks
-
-pgtuner runs 22 checks in the following order. Each check has a *scope*:
-**cluster-wide** checks examine instance-level state (settings, OS, replication
-topology) and run once; **per-database** checks examine a single database's
-catalog and stats, and under `-all-databases` run once per user database.
-
-| # | Check | Scope | What it inspects |
+| # | Check | Scope | What it looks at |
 |---|-------|-------|------------------|
-| 1 | **Connection** | cluster | `max_connections`, `work_mem` headroom vs. available RAM, listen/SSL exposure |
-| 2 | **Version** | cluster | community support window; flags end-of-life versions |
-| 3 | **Environment** | cluster | bare-metal/VM/Docker/Kubernetes/LXC detection, cgroup memory/CPU limits |
-| 4 | **Memory** | cluster | `shared_buffers`, `effective_cache_size`, `maintenance_work_mem` ratios (cgroup-aware) |
-| 5 | **Huge Pages** | cluster | `huge_pages` setting and `vm.nr_hugepages` kernel value (with OS inspection) |
-| 6 | **OS / Kernel** | cluster | transparent huge pages, `vm.overcommit_memory`, `vm.swappiness` (with OS inspection) |
-| 7 | **Cache** | per-db | buffer cache hit ratio, index-block hit ratio, table-block hit ratio |
-| 8 | **WAL** | cluster | `wal_compression`, `wal_level`, `min_wal_size`/`max_wal_size` |
-| 9 | **Checkpoints** | cluster | requested vs. timed checkpoint ratio, `checkpoint_completion_target` |
-| 10 | **Planner** | cluster | `random_page_cost`, `default_statistics_target`, storage-class-aware tuning |
-| 11 | **Storage Settings** | cluster | data checksums, TOAST compression, `log_temp_files` |
-| 12 | **Storage** | per-db | temp-file spills (`pg_stat_database.temp_files`/`temp_bytes`) |
-| 13 | **I/O** | cluster | `pg_stat_io` eviction/fsync pressure (PG16+), background writer efficiency |
-| 14 | **Autovacuum Settings** | cluster | enabled, `autovacuum_max_workers`, worker slots (PG18+), failsafe age (PG14+), workers vs CPUs |
-| 15 | **Autovacuum** | per-db | dead-tuple accumulation, transaction-ID wraparound age |
-| 16 | **Security** | cluster | superuser count, `password_encryption`, public schema privileges |
-| 17 | **Statistics** | cluster | `track_io_timing`, `pg_stat_statements` presence |
-| 18 | **Replication** | cluster | role/topology, standby lag, slots, logical replication, WAL spill |
-| 19 | **Schema** | per-db | bloat estimates, unused/duplicate/invalid indexes, PK-less tables, unindexed FKs, never-analyzed tables |
-| 20 | **Workload** | per-db | connection utilization, idle-in-transaction, long-running queries, lock waits, prepared xacts |
-| 21 | **Query Performance** | per-db | `pg_stat_statements` top queries by time, low cache-hit and temp-heavy queries |
-| 22 | **Configuration** | cluster | pending restart, parallelism vs CPUs, logging hygiene, timeouts, archiving health, stale extensions |
+| 1 | Connection | cluster | `max_connections`, `work_mem` against RAM, listen and SSL exposure |
+| 2 | Version | cluster | Community support window and end-of-life |
+| 3 | Topology | cluster | Role, neighbours, cluster manager, distribution |
+| 4 | Environment | cluster | Bare metal, VM, Docker, Kubernetes or LXC. cgroup memory and CPU limits |
+| 5 | Memory | cluster | `shared_buffers`, `effective_cache_size`, `maintenance_work_mem` against RAM. cgroup-aware |
+| 6 | Huge Pages | cluster | `huge_pages` and `vm.nr_hugepages` |
+| 7 | OS / Kernel | cluster | Transparent huge pages, `vm.overcommit_memory`, `vm.swappiness` |
+| 8 | Cache | per-db | Buffer, index and table hit ratios |
+| 9 | WAL | cluster | `wal_compression`, `wal_level`, `min_wal_size`, `max_wal_size` |
+| 10 | Checkpoints | cluster | Requested against timed checkpoints, `checkpoint_completion_target` |
+| 11 | Planner | cluster | `random_page_cost`, `default_statistics_target`, storage class |
+| 12 | Storage Settings | cluster | Data checksums, TOAST compression, `log_temp_files` |
+| 13 | Storage | per-db | Temp-file spills |
+| 14 | I/O | cluster | `pg_stat_io` eviction and fsync pressure (PG16+), background writer |
+| 15 | Autovacuum Settings | cluster | Enabled, worker count and slots, failsafe age, workers against CPUs |
+| 16 | Autovacuum | per-db | Dead tuples, transaction ID wraparound age |
+| 17 | Security | cluster | Superuser count, `password_encryption`, `public` schema privileges |
+| 18 | Statistics | cluster | `track_io_timing`, `pg_stat_statements` |
+| 19 | Replication | cluster | Slots, lag, standby settings, logical replication, WAL spill |
+| 20 | Schema | per-db | Bloat, unused, duplicate and invalid indexes, tables without a primary key, foreign keys without an index, never-analyzed tables |
+| 21 | Workload | per-db | Connection use, idle-in-transaction sessions, long queries, lock waits, prepared transactions |
+| 22 | Query Performance | per-db | Top queries by time, low cache hit, heavy temp use |
+| 23 | Configuration | cluster | Pending restart, parallelism, logging, timeouts, archiving, outdated extensions |
 
-## Advice Levels
+### PostgreSQL versions
 
-Each piece of advice carries one of these levels:
+pgtuner supports PostgreSQL 14 to 18 and adjusts its queries to each version.
+
+| Major | End of life | What changes |
+|-------|-------------|--------------|
+| 14 | 2026-11-12 | Baseline |
+| 15 | 2027-11-11 | `stats_temp_directory` no longer exists, so pgtuner skips it |
+| 16 | 2028-11-09 | `pg_stat_io` exists, and the I/O check uses it |
+| 17 | 2029-11-08 | `pg_stat_checkpointer` has new column names, and pgtuner uses them |
+| 18 | 2030-11-14 | Data checksums on by default. `io_method` is available |
+
+CI runs the integration tests against 14, 15, 16, 17 and 18.
+
+## Levels and grade
 
 | Level | Meaning |
 |-------|---------|
-| `ok` | Setting is within recommended parameters |
-| `info` | Low-priority suggestion |
-| `todo` | Improvement worth scheduling |
-| `warn` | Suboptimal configuration |
-| `bad` | Dangerous or high-risk setting (causes exit code 1) |
-| `unknown` | Check could not determine a result |
+| `ok` | The setting is fine |
+| `info` | Low priority |
+| `todo` | Worth scheduling |
+| `warn` | Not a good setting |
+| `bad` | Dangerous. Sets exit code 1 |
+| `unknown` | pgtuner could not decide |
 
-## Library Use
+The grade depends only on the count of findings at each level:
 
-pgtuner is also importable as a Go package:
+```
+infoPenalty    = min(2 * info, 10)
+unknownPenalty = min(3 * unknown, 9)
+score = 100 - 25 * bad - 8 * warn - infoPenalty - unknownPenalty   (0 to 100)
+grade = A if score >= 90, B if >= 80, C if >= 70, D if >= 60, else F
+```
+
+`ok` and `todo` cost nothing. One `bad` finding caps the grade at C, and two give
+an F. The `info` and `unknown` penalties have caps, so many low-priority
+findings cannot fail a server alone.
+
+## Output formats
+
+`-format json` has `server_version`, `advice`, `summary`, `grade`, `topology` and
+`flavor`. With `-all-databases` it adds `databases`, and each per-database advice
+has a `database` field.
+
+`-format csv` writes one row per advice, with the header
+`database,section,level,title,message,detail,doc_ref`. It has no grade or summary.
+
+`-format markdown` groups advice by section into tables, ready to paste into an
+issue or pull request.
+
+## Use it as a Go library
 
 ```go
 package main
 
 import (
-    "context"
-    "fmt"
-    "log"
+	"context"
+	"fmt"
+	"log"
 
-    "github.com/OpenRemedy/pgtuner/pkg/pgtuner"
-    "github.com/OpenRemedy/pgtuner/pkg/tuner"
+	"github.com/soylic/pgtuner/pkg/pgtuner"
+	"github.com/soylic/pgtuner/pkg/tuner"
 )
 
 func main() {
-    ctx := context.Background()
-    rep, err := tuner.Analyze(ctx, pgtuner.Options{
-        DSN: "postgres://analyst@localhost:5432/mydb",
-    })
-    if err != nil {
-        log.Fatal(err)
-    }
+	rep, err := tuner.Analyze(context.Background(), pgtuner.Options{
+		DSN: "postgres://analyst@localhost:5432/mydb",
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
 
-    fmt.Printf("Server: %s\n", rep.ServerVersion)
-    for _, a := range rep.Advice {
-        if a.Level >= pgtuner.Warn {
-            fmt.Printf("[%s] %s: %s\n", a.Level, a.Section, a.Title)
-        }
-    }
-
-    // rep.ExitCode() returns 1 if any Bad-level advice is present, else 0.
-    fmt.Printf("Summary: %v\n", rep.Summary)
+	fmt.Println("server", rep.ServerVersion, "grade", rep.Grade())
+	if rep.Topology != nil {
+		fmt.Println("role", rep.Topology.Role)
+	}
+	for _, a := range rep.Advice {
+		if a.Level >= pgtuner.Warn {
+			fmt.Printf("[%s] %s: %s\n", a.Level, a.Section, a.Title)
+		}
+	}
+	// rep.ExitCode() is 1 when any advice is bad, else 0.
 }
 ```
 
-The `Report` struct:
+Set `Options.AllDatabases` to run per-database checks everywhere. Use
+`pgtuner.FilterByMinLevel` and `pgtuner.SortBySeverity` to shape the advice list.
+`Report.Topology` and `Report.Flavor` are nil only in reports you build yourself.
 
-```go
-type Report struct {
-    ServerVersion string         `json:"server_version"`
-    Advice        []Advice       `json:"advice"`
-    Summary       map[string]int `json:"summary"`             // level name -> count
-    GradeLetter   string         `json:"grade"`               // overall A–F grade; read via Grade()
-    Databases     []string       `json:"databases,omitempty"` // analyzed databases (-all-databases only)
-}
-```
+## OS inspection
 
-Set `Options.AllDatabases` to run per-database checks against every user
-database; per-database `Advice` items carry a `Database` field. Use
-`pgtuner.FilterByMinLevel`, `pgtuner.SortBySeverity`, and `Report.Grade()` to
-post-process the report.
+With `-os-inspect`, pgtuner reads `/proc/meminfo` and a few `sysctl` values on
+Linux. Use it only when pgtuner runs on the database host. The memory, huge page
+and kernel checks then compare PostgreSQL settings against real host values.
 
-## OS Inspection
+Without it, or on another operating system, those checks still run and report
+`info` advice that OS facts are missing. Remote analysis works. The memory
+advice is less precise.
 
-Pass `-os-inspect` when running pgtuner **on the database host itself**. On
-Linux it reads `/proc/meminfo` and relevant `sysctl` values (`vm.nr_hugepages`,
-`vm.overcommit_memory`, etc.) to enrich the memory and huge-pages checks.
-
-Without `-os-inspect` (or on non-Linux hosts) those checks degrade gracefully:
-they emit `info`-level advice noting that OS facts are unavailable, rather than
-failing or silently skipping. Remote analysis — connecting to a server on
-another host — is fully supported; it simply produces less precise memory
-recommendations.
-
-## Validation
-
-`scripts/version-matrix.sh` spins up disposable Docker containers for PG 15,
-16, 17, and 18 on alternate ports (5515–5518), runs `pgtuner -format json`
-against each, validates the JSON, and checks that no `unknown`-level advice appears in
-the summary. It exits with `MATRIX PASS` when all versions pass.
+## Develop
 
 ```bash
-bash scripts/version-matrix.sh
+go build ./...
+go vet ./...
+go test ./...
 ```
 
-Requires Docker and Python 3.
+Integration tests need a database and the `integration` build tag:
 
-## Contributing
+```bash
+docker run -d --rm --name pgtuner-test -p 55432:5432 \
+  -e POSTGRES_USER=pgtuner -e POSTGRES_PASSWORD=pgtuner -e POSTGRES_DB=pgtuner \
+  postgres:17-alpine
+PGTUNER_TEST_DSN='postgres://pgtuner:pgtuner@localhost:55432/pgtuner' \
+  go test -tags integration ./...
+```
 
-All contributions must be DCO-signed (`git commit -s`).
+`scripts/version-matrix.sh` starts a disposable container for each of PostgreSQL
+14 to 18 on ports 5514 to 5518. It runs `pgtuner -format json` against each one.
+It checks that the JSON is valid and that no advice is `unknown`. It needs Docker
+and Python 3.
+
+To make a release, push a tag such as `v0.1.0`. The release workflow builds
+binaries for Linux, macOS and Windows, plus `.deb` and `.rpm` packages, and
+publishes them with a `SHA256SUMS` file.

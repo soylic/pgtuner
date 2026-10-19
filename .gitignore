@@ -1,14 +1,13 @@
-# Version-matrix test output (per-version JSON and stderr logs from version-matrix.sh).
-# These are ephemeral outputs; only the harness scripts are committed.
+# Version-matrix output from scripts/version-matrix.sh
 scripts/matrix-output/
 
 # Built binary
 /pgtuner
 
-# Release artefacts — built by CI, never committed. Scoped to dist/ only,
-# not a bare "*.deb"/"*.rpm" — see openremedy-client's .gitignore for why
-# that bit before (matched committed source templates by name coincidence).
+# Release artifacts built by CI. Scoped to dist/ so source templates that
+# happen to end in .deb or .rpm are not ignored.
 dist/*.deb
 dist/*.rpm
 dist/*.tar.gz
 dist/*.zip
+dist/SHA256SUMS

@@ -1,9 +1,12 @@
 name: Release
+
 on:
   push:
-    tags: ["v*"]
+    tags: ["v*.*.*"]
+
 permissions:
   contents: write
+
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -12,17 +15,16 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - name: Build release binaries
+
+      - name: Build binaries
         run: |
           set -euo pipefail
-          VERSION="${GITHUB_REF_NAME}"
+          VERSION="${GITHUB_REF_NAME#v}"
           mkdir -p dist
-          targets="linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64"
-          for t in $targets; do
+          for t in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
             GOOS="${t%/*}"; GOARCH="${t#*/}"
             out="pgtuner"
             [ "$GOOS" = "windows" ] && out="pgtuner.exe"
-            echo "building $GOOS/$GOARCH"
             CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" \
               go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o "$out" ./cmd/pgtuner
             base="pgtuner_${VERSION}_${GOOS}_${GOARCH}"
@@ -33,9 +35,21 @@ jobs:
             fi
             rm -f "$out"
           done
-          ( cd dist && sha256sum * > SHA256SUMS )
-          ls -l dist
-      - name: Create GitHub Release
+
+      - name: Build .deb and .rpm
+        run: |
+          set -euo pipefail
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.41.3
+          export PATH="$(go env GOPATH)/bin:$PATH"
+          VERSION="${GITHUB_REF_NAME#v}"
+          for arch in amd64 arm64; do
+            ./packaging/build.sh "$VERSION" "$arch" "deb rpm"
+          done
+
+      - name: Checksums and release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${GITHUB_REF_NAME}" dist/* --generate-notes --title "pgtuner ${GITHUB_REF_NAME}"
+        run: |
+          set -euo pipefail
+          ( cd dist && sha256sum * > SHA256SUMS )
+          gh release create "${GITHUB_REF_NAME}" dist/* --generate-notes --title "pgtuner ${GITHUB_REF_NAME}"

@@ -42,52 +42,76 @@ The password comes from `PGPASSWORD` or `~/.pgpass`, like any libpq client.
 ```
 PostgreSQL Tuning Report, server 17.11
 
-=== Findings (by severity) ===
+=== Warn (1) ===
   (Connection)
   [warn]  SSL disabled: ssl=off. The server transmits all client traffic (including passwords) in plaintext.
           Detail: Enable SSL to encrypt client-server traffic.
           Ref:    https://www.postgresql.org/docs/current/runtime-config-connection.html
-  (Replication)
-  [warn]  Inactive replication slot(s) retain WAL and can fill the disk: pg_replication_slots shows 1 inactive slot(s): pg2. ...
-          Detail: Drop unused slots with SELECT pg_drop_replication_slot('<name>'). ...
-          Ref:    https://www.postgresql.org/docs/current/view-pg-replication-slots.html
 
-Summary:  7 ok  28 info  0 todo  3 warn  0 bad  0 unknown   Grade: D
+Summary:  9 ok  24 info  0 todo  1 warn  0 bad  0 unknown   Grade: B
 ```
 
-That output comes from `pgtuner -min-level warn -sort severity`, trimmed.
+That output comes from `pgtuner -min-level warn`. On a terminal the report opens
+with a colored banner and lists the worst findings first. Findings go in groups
+by level: Bad, Warn, Todo, Info, OK.
 
 ## Options
 
 | Flag | Default | Meaning |
 |------|---------|---------|
 | `-dsn` | | libpq connection string, such as `postgres://user@host:5432/db` |
-| `-host`, `-port`, `-user`, `-dbname` | `5432` for the port | Build a connection from parts when `-dsn` is empty |
+| `-host`, `-port`, `-user`, `-dbname` | port `5432` | Build a connection from parts when `-dsn` is empty. A `-host` that starts with `/` is a Unix socket directory, such as `/var/run/postgresql` |
 | `-format` | `terminal` | `terminal` (alias `text`), `json`, `csv` or `markdown` (alias `md`). Case-insensitive |
-| `-os-inspect` | off | Read host memory and sysctl values. Linux only. Run it on the database host |
-| `-no-color` | off | Turn off ANSI color. Affects `terminal` only |
+| `-sort` | `auto` | `auto` sorts by severity on a terminal and by section in the other formats. `section` and `severity` force one |
+| `-ids` | off | Print each finding's ID in terminal output, so you can copy it into `-ignore` |
 | `-min-level` | `ok` | Show advice at this level or worse: `ok`, `info`, `todo`, `warn`, `bad`, `unknown`. The summary and grade still count everything |
-| `-sort` | `section` | `section` groups by section. `severity` prints one list, worst first |
+| `-color` | `auto` | `auto` colors only on a terminal. `always` forces color, for `less -R`. `never` turns it off. `NO_COLOR` also turns it off |
+| `-no-color` | off | Same as `-color never` |
+| `-only`, `-skip` | | Run only these checks, or leave these out. Comma-separated names from `-list-checks`. A wrong name is an error |
+| `-ignore` | | Drop findings by ID. Comma-separated, `*` allowed, such as `connection.*`. See [Finding IDs](#finding-ids-and-ignoring-findings) |
+| `-fail-on` | `bad` | Exit with code 1 when a finding is at this level or worse: `none`, `info`, `todo`, `warn` or `bad` |
+| `-timeout` | `30s` | Time limit for each query. `0` turns the limit off |
 | `-all-databases` | off | Run per-database checks on every connectable, non-template database. Cluster-wide checks run once |
-| `-version` | | Print the version and exit |
+| `-os-inspect` | off | Read host memory and sysctl values. Linux only. Run it on the database host |
+| `-patroni-url` | | Patroni REST API, such as `http://pg1:8008`. Lists the members and makes the Patroni match certain |
+| `-diff` | | Compare two JSON reports: `pgtuner -diff old.json new.json` |
+| `-list-checks` | | Print the check names and exit |
+| `-list-rules` | | Print the finding IDs that `-ignore` accepts and exit |
+| `-version` | | Print the version, commit, Go version and platform, and exit |
 
 When `-dsn` is empty, pgtuner builds one from `-host`, `-port`, `-user` and
 `-dbname`. The password, SSL mode and other parameters come from the `PG*`
-environment variables and `~/.pgpass`.
+environment variables and `~/.pgpass`. Flags can come before or after file names.
 
 ### Exit codes
 
 | Code | Meaning |
 |------|---------|
-| 0 | Analysis finished. No `bad` advice |
-| 1 | Analysis finished. At least one `bad` advice |
+| 0 | Analysis finished. No finding at the `-fail-on` level or worse |
+| 1 | Analysis finished. At least one finding at the `-fail-on` level or worse |
 | 2 | pgtuner failed: bad flag, no connection, and so on |
 
-The exit code uses the full advice set, even when `-min-level` hides some of it.
+The default `-fail-on bad` keeps the old behavior. Findings that are `unknown`
+never set code 1. The exit code uses every finding that `-ignore` keeps, even
+when `-min-level` hides some of them.
 
 ```bash
-pgtuner -dsn "$DB_DSN" -format json > report.json || echo "bad-level advice found"
+pgtuner -dsn "$DB_DSN" -fail-on warn -format json > report.json || echo "warn or worse found"
 ```
+
+## Safe on production
+
+pgtuner only reads. To make that true by construction, each session it opens:
+
+- sets `default_transaction_read_only = on`, so a write fails
+- sets `statement_timeout` to 30 seconds (change it with `-timeout`) and `lock_timeout` to 5 seconds, so a heavy catalog query cannot hold the server
+- names itself `pgtuner` in `pg_stat_activity`, unless your DSN sets `application_name`
+
+pgtuner sends these as `SET` commands after it connects, not as startup
+parameters, because a connection pooler such as PgBouncer can reject startup
+parameters. If a hosted service refuses a `SET`, that session runs without the
+limit and the report still works. When a query hits the timeout, the check
+reports an `unknown` finding and the other checks go on.
 
 ## Where is this server in the cluster?
 
@@ -113,10 +137,26 @@ match is `certain` and the report lists the members from that catalog:
 - pg_auto_failover: the table `pgautofailover.node`, on the monitor database
 - Citus: the table `pg_dist_node`
 
-Patroni keeps its state in etcd, Consul or ZooKeeper, not in PostgreSQL. pgtuner
-looks for its marks instead: sessions named `Patroni heartbeat`, and a
-replication slot named like the standby that uses it. A match is `probable` or
-`possible`, never `certain`. The report says so.
+Patroni keeps its state in etcd, Consul or ZooKeeper, not in PostgreSQL. Without
+help, pgtuner looks for its marks: sessions named `Patroni heartbeat`, and a
+replication slot named like the standby that uses it. A match is then `probable`
+or `possible`, and the report says it is a guess.
+
+Give it the REST API with `-patroni-url http://pg1:8008` and the match becomes
+`certain`. pgtuner then lists every member with its role, state and timeline, and
+it warns when:
+
+- no member is the leader
+- a member is not running or streaming
+- Patroni is in pause mode, so it does not fail over by itself
+
+pgtuner sends one `GET /cluster`, with a 5 second limit. It does not follow
+redirects and does not send credentials.
+
+Sometimes Patroni or a hosted service controls the settings. Then pgtuner adds one
+sentence to each advice that tells you to change a setting. The sentence says to
+use `patronictl edit-config`, or the provider's parameter settings, instead of
+`ALTER SYSTEM`.
 
 **Distributions.** pgtuner names Aurora, RDS, Cloud SQL, AlloyDB, Azure, Supabase,
 Neon, YugabyteDB, CockroachDB, Greenplum and EDB. It also lists the
@@ -128,8 +168,9 @@ What the tests cover:
 
 | Part | Tested against |
 |------|----------------|
-| Roles, cascade, upstream, downstream, system identifier | A live Patroni 4.1.5 cluster of three nodes with etcd 3.5, one node cascading from another |
-| Patroni marks | The same cluster |
+| Roles, cascade, upstream, downstream, system identifier, timeline | A live Patroni 4.1.5 cluster of three nodes with etcd 3.5, one node cascading from another, before and after a switchover |
+| Patroni marks and the REST API | The same cluster |
+| Unix socket connection | A PostgreSQL 17 container with its socket directory shared with the host |
 | repmgr, pg_auto_failover, Citus | Unit tests only. The catalog queries have not run against a real installation |
 | Hosted-service names | Unit tests only. The setting prefixes and role names come from each provider's conventions, which they can change |
 
@@ -161,6 +202,47 @@ Example, on a cascading standby managed by Patroni (`-format json`, trimmed):
 ```
 
 To see a whole group, run pgtuner on each node and compare `system_identifier`.
+
+## Finding IDs and ignoring findings
+
+Every finding has an `id`, such as `connection.ssl-disabled` or `wal.fsync-off`.
+It names the condition. It does not change when the wording or the numbers
+change, so scripts can rely on it.
+
+```bash
+pgtuner -list-rules                       # every ID pgtuner can emit
+pgtuner -dsn "$DB_DSN" -ids               # show the ID of each finding
+pgtuner -dsn "$DB_DSN" -ignore 'connection.ssl-disabled,cache.*'
+```
+
+An ignored finding does not count in the summary or the grade, and it cannot set
+exit code 1. The footer says how many findings pgtuner ignored. The JSON report
+has an `ignored` count. Use `-skip` to leave a whole check out, and `-only` to run just
+some checks.
+
+## Compare two reports
+
+Save a JSON report now and another one later, then compare them:
+
+```bash
+pgtuner -dsn "$DB_DSN" -format json > before.json
+# change something
+pgtuner -dsn "$DB_DSN" -format json > after.json
+pgtuner -diff before.json after.json
+```
+
+```
+Grade: B -> A
+
+Resolved (2)
+  [info]  connection.ram-headroom-unverifiable  Cannot verify RAM headroom (no OS facts)
+  [warn]  connection.ssl-disabled  SSL disabled
+```
+
+The diff matches findings by database and ID. It lists what is new, worse, better
+or resolved. `-format json` prints the same as data. It exits with code 1 when a
+finding is new or worse at the `-fail-on` level or above. A pipeline can use this
+to block a change that adds a warning.
 
 ## What it checks
 
@@ -235,11 +317,11 @@ findings cannot fail a server alone.
 ## Output formats
 
 `-format json` has `server_version`, `advice`, `summary`, `grade`, `topology` and
-`flavor`. With `-all-databases` it adds `databases`, and each per-database advice
+`flavor`, and `ignored` when `-ignore` dropped something. With `-all-databases` it adds `databases`, and each per-database advice
 has a `database` field.
 
 `-format csv` writes one row per advice, with the header
-`database,section,level,title,message,detail,doc_ref`. It has no grade or summary.
+`database,section,level,id,title,message,detail,doc_ref`. It has no grade or summary.
 
 `-format markdown` groups advice by section into tables, ready to paste into an
 issue or pull request.
@@ -319,8 +401,8 @@ and Python 3.
 ## Versions
 
 pgtuner follows [Semantic Versioning](https://semver.org). The public surface is
-the command-line flags, the exit codes, the JSON and CSV fields, and the Go API
-in `pkg/`. Before 1.0.0, a minor release may change any of them.
+the command-line flags, the exit codes, the JSON and CSV fields, the finding IDs,
+and the Go API in `pkg/`. Before 1.0.0, a minor release may change any of them.
 
 `pgtuner -version` prints the version, the commit, the Go version and the
 platform:

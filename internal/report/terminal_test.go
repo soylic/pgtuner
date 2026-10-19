@@ -3,8 +3,10 @@ package report
 import (
 	"bytes"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/soylic/pgtuner/pkg/pgtuner"
 )
@@ -120,5 +122,63 @@ func TestColorEnabledNonTerminal(t *testing.T) {
 	os.Unsetenv("NO_COLOR")
 	if ColorEnabled(w) {
 		t.Fatal("a pipe is not a terminal; color should be disabled")
+	}
+}
+
+func TestWriteTerminalPlainHasNoANSI(t *testing.T) {
+	var buf bytes.Buffer
+	if err := WriteTerminalOptions(&buf, makeTestReport(), TerminalOptions{Version: "0.1.0"}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(buf.String(), "\033[") {
+		t.Errorf("plain output must not contain ANSI codes:\n%q", buf.String())
+	}
+	if strings.Contains(buf.String(), "╭") {
+		t.Errorf("plain output must not contain the banner:\n%s", buf.String())
+	}
+}
+
+func TestWriteTerminalColorBanner(t *testing.T) {
+	rep := makeTestReport()
+	rep.Topology = &pgtuner.Topology{Role: "cascading_standby"}
+	var buf bytes.Buffer
+	if err := WriteTerminalOptions(&buf, rep, TerminalOptions{Color: true, Version: "0.1.0"}); err != nil {
+		t.Fatal(err)
+	}
+	got := buf.String()
+	for _, want := range []string{"pgtuner", "0.1.0", "PostgreSQL 16.2", "cascading standby", "Grade ", "╭", "╯"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("banner missing %q:\n%s", want, got)
+		}
+	}
+	if !strings.Contains(got, "\033[1m\033[33m[warn]") {
+		t.Errorf("warn tag must be bold yellow:\n%q", got)
+	}
+}
+
+func TestBannerBoxIsRectangular(t *testing.T) {
+	var buf bytes.Buffer
+	if err := writeBanner(&buf, makeTestReport(), "0.1.0"); err != nil {
+		t.Fatal(err)
+	}
+	ansi := regexp.MustCompile(`\x1b\[[0-9;]*m`)
+	lines := strings.Split(strings.TrimRight(ansi.ReplaceAllString(buf.String(), ""), "\n"), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("want 3 box lines, got %d:\n%s", len(lines), buf.String())
+	}
+	w := utf8.RuneCountInString(lines[0])
+	for _, l := range lines {
+		if n := utf8.RuneCountInString(l); n != w {
+			t.Errorf("box line width %d, want %d: %q", n, w, l)
+		}
+	}
+}
+
+func TestGradeStyle(t *testing.T) {
+	cases := map[string]string{"A": ansiGreen, "B": ansiGreen, "C": ansiYellow, "D": ansiYellow, "F": ansiRed}
+	for grade, want := range cases {
+		if got := gradeStyle(grade)[1]; got != want {
+			t.Errorf("gradeStyle(%q) = %q, want %q", grade, got, want)
+		}
 	}
 }

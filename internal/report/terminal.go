@@ -4,41 +4,87 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
+	"unicode/utf8"
 
 	"golang.org/x/term"
 
 	"github.com/soylic/pgtuner/pkg/pgtuner"
 )
 
+// ANSI styles. Plain output never contains them.
 const (
 	ansiReset   = "\033[0m"
+	ansiBold    = "\033[1m"
+	ansiDim     = "\033[2m"
 	ansiRed     = "\033[31m"
-	ansiYellow  = "\033[33m"
-	ansiCyan    = "\033[36m"
 	ansiGreen   = "\033[32m"
+	ansiYellow  = "\033[33m"
 	ansiBlue    = "\033[34m"
 	ansiMagenta = "\033[35m"
+	ansiCyan    = "\033[36m"
 )
 
-func levelGlyph(l pgtuner.Level, color bool) (tag, colorCode string) {
+// TerminalOptions controls WriteTerminalOptions.
+type TerminalOptions struct {
+	Color        bool   // ANSI styles and the banner header
+	SeveritySort bool   // one flat list in r.Advice order instead of sections
+	Version      string // pgtuner version shown in the banner. Empty hides it
+}
+
+// paint wraps s in the given styles when color is on.
+func paint(color bool, s string, styles ...string) string {
+	if !color || s == "" || len(styles) == 0 {
+		return s
+	}
+	return strings.Join(styles, "") + s + ansiReset
+}
+
+// levelStyle returns the styles for a level. Bad and warn are bold so they stand out.
+func levelStyle(l pgtuner.Level) []string {
 	switch l {
 	case pgtuner.OK:
-		tag, colorCode = "[ok]  ", ansiGreen
+		return []string{ansiGreen}
 	case pgtuner.Info:
-		tag, colorCode = "[info]", ansiCyan
+		return []string{ansiCyan}
 	case pgtuner.Todo:
-		tag, colorCode = "[todo]", ansiBlue
+		return []string{ansiBlue}
 	case pgtuner.Warn:
-		tag, colorCode = "[warn]", ansiYellow
+		return []string{ansiBold, ansiYellow}
 	case pgtuner.Bad:
-		tag, colorCode = "[bad] ", ansiRed
+		return []string{ansiBold, ansiRed}
 	default:
-		tag, colorCode = "[???] ", ansiMagenta
+		return []string{ansiMagenta}
 	}
-	if !color {
-		colorCode = ""
+}
+
+func levelTag(l pgtuner.Level) string {
+	switch l {
+	case pgtuner.OK:
+		return "[ok]  "
+	case pgtuner.Info:
+		return "[info]"
+	case pgtuner.Todo:
+		return "[todo]"
+	case pgtuner.Warn:
+		return "[warn]"
+	case pgtuner.Bad:
+		return "[bad] "
+	default:
+		return "[???] "
 	}
-	return tag, colorCode
+}
+
+// gradeStyle colors a grade letter: green for A and B, yellow for C and D, red for F.
+func gradeStyle(grade string) []string {
+	switch grade {
+	case "A", "B":
+		return []string{ansiBold, ansiGreen}
+	case "C", "D":
+		return []string{ansiBold, ansiYellow}
+	default:
+		return []string{ansiBold, ansiRed}
+	}
 }
 
 // ColorEnabled reports whether color output is appropriate for f.
@@ -52,50 +98,98 @@ func ColorEnabled(f *os.File) bool {
 }
 
 func writeAdvice(w io.Writer, a pgtuner.Advice, color bool) error {
-	tag, col := levelGlyph(a.Level, color)
+	tag := paint(color, levelTag(a.Level), levelStyle(a.Level)...)
 	dbTag := ""
 	if a.Database != "" {
-		dbTag = fmt.Sprintf("[%s] ", a.Database)
+		dbTag = paint(color, fmt.Sprintf("[%s]", a.Database), ansiMagenta) + " "
 	}
-	var line string
-	if color {
-		line = fmt.Sprintf("  %s%s%s  %s%s: %s\n", col, tag, ansiReset, dbTag, a.Title, a.Message)
-	} else {
-		line = fmt.Sprintf("  %s  %s%s: %s\n", tag, dbTag, a.Title, a.Message)
-	}
-	if _, err := fmt.Fprint(w, line); err != nil {
+	title := paint(color, a.Title, ansiBold)
+	if _, err := fmt.Fprintf(w, "  %s  %s%s: %s\n", tag, dbTag, title, a.Message); err != nil {
 		return err
 	}
 	if a.Detail != "" {
-		if _, err := fmt.Fprintf(w, "          Detail: %s\n", a.Detail); err != nil {
+		if _, err := fmt.Fprintf(w, "          %s %s\n", paint(color, "Detail:", ansiDim), a.Detail); err != nil {
 			return err
 		}
 	}
 	if a.DocRef != "" {
-		if _, err := fmt.Fprintf(w, "          Ref:    %s\n", a.DocRef); err != nil {
+		if _, err := fmt.Fprintf(w, "          %s    %s\n", paint(color, "Ref:", ansiDim), paint(color, a.DocRef, ansiDim)); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
+// writeBanner prints the colored header box: tool version, server version,
+// role when known, and the grade.
+func writeBanner(w io.Writer, r *pgtuner.Report, version string) error {
+	type seg struct {
+		text   string
+		styles []string
+	}
+	segs := []seg{{"pgtuner", []string{ansiBold, ansiCyan}}}
+	if version != "" {
+		segs = append(segs, seg{" " + version, []string{ansiDim}})
+	}
+	segs = append(segs, seg{"   ", nil}, seg{"PostgreSQL " + r.ServerVersion, []string{ansiBold}})
+	if r.Topology != nil && r.Topology.Role != "" && r.Topology.Role != "unknown" {
+		segs = append(segs, seg{"  " + strings.ReplaceAll(r.Topology.Role, "_", " "), []string{ansiDim}})
+	}
+	grade := r.Grade()
+	segs = append(segs, seg{"   Grade ", nil}, seg{grade, gradeStyle(grade)})
+
+	width := 0
+	var line strings.Builder
+	for _, s := range segs {
+		width += utf8.RuneCountInString(s.text)
+		line.WriteString(paint(true, s.text, s.styles...))
+	}
+	border := func(l, m, rr string) string {
+		return paint(true, l+strings.Repeat(m, width+2)+rr, ansiDim)
+	}
+	edge := paint(true, "│", ansiDim)
+	_, err := fmt.Fprintf(w, "%s\n%s %s %s\n%s\n\n", border("╭", "─", "╮"), edge, line.String(), edge, border("╰", "─", "╯"))
+	return err
+}
+
+func writeSectionTitle(w io.Writer, name string, color bool) error {
+	if color {
+		_, err := fmt.Fprintf(w, "%s %s\n", paint(true, "▌", ansiCyan), paint(true, name, ansiBold))
+		return err
+	}
+	_, err := fmt.Fprintf(w, "=== %s ===\n", name)
+	return err
+}
+
 // WriteTerminal writes a human-readable report to w. By default it groups advice
 // by Section in first-seen order. With severitySort it prints one flat list in
 // r.Advice order and labels a section only when it changes. With color it adds ANSI codes.
 func WriteTerminal(w io.Writer, r *pgtuner.Report, color, severitySort bool) error {
-	if _, err := fmt.Fprintf(w, "PostgreSQL Tuning Report, server %s\n\n", r.ServerVersion); err != nil {
+	return WriteTerminalOptions(w, r, TerminalOptions{Color: color, SeveritySort: severitySort})
+}
+
+// WriteTerminalOptions is WriteTerminal with the tool version and the banner header.
+// Without color the output has no banner and no ANSI codes, so scripts can parse it.
+func WriteTerminalOptions(w io.Writer, r *pgtuner.Report, o TerminalOptions) error {
+	color := o.Color
+	if color {
+		if err := writeBanner(w, r, o.Version); err != nil {
+			return err
+		}
+	} else if _, err := fmt.Fprintf(w, "PostgreSQL Tuning Report, server %s\n\n", r.ServerVersion); err != nil {
 		return err
 	}
 
-	if severitySort {
-		if _, err := fmt.Fprintf(w, "=== Findings (by severity) ===\n"); err != nil {
+	if o.SeveritySort {
+		title := "Findings (by severity)"
+		if err := writeSectionTitle(w, title, color); err != nil {
 			return err
 		}
 		prevSection := ""
 		first := true
 		for _, a := range r.Advice {
 			if first || a.Section != prevSection {
-				if _, err := fmt.Fprintf(w, "  (%s)\n", a.Section); err != nil {
+				if _, err := fmt.Fprintf(w, "  %s\n", paint(color, "("+a.Section+")", ansiDim)); err != nil {
 					return err
 				}
 				prevSection = a.Section
@@ -119,7 +213,7 @@ func WriteTerminal(w io.Writer, r *pgtuner.Report, color, severitySort bool) err
 		}
 
 		for _, sec := range sectionOrder {
-			if _, err := fmt.Fprintf(w, "=== %s ===\n", sec); err != nil {
+			if err := writeSectionTitle(w, sec, color); err != nil {
 				return err
 			}
 			for _, a := range grouped[sec] {
@@ -140,10 +234,16 @@ func WriteTerminal(w io.Writer, r *pgtuner.Report, color, severitySort bool) err
 	}
 	for _, l := range levels {
 		n := r.Summary[l.String()]
-		if _, err := fmt.Fprintf(w, "  %d %s", n, l.String()); err != nil {
+		cell := fmt.Sprintf("%d %s", n, l.String())
+		if n == 0 {
+			cell = paint(color, cell, ansiDim)
+		} else {
+			cell = paint(color, cell, levelStyle(l)...)
+		}
+		if _, err := fmt.Fprintf(w, "  %s", cell); err != nil {
 			return err
 		}
 	}
-	_, err := fmt.Fprintf(w, "   Grade: %s\n", r.Grade())
+	_, err := fmt.Fprintf(w, "   Grade: %s\n", paint(color, r.Grade(), gradeStyle(r.Grade())...))
 	return err
 }

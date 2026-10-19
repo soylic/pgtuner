@@ -123,7 +123,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 				color = report.ColorEnabled(f)
 			}
 		}
-		if err := report.WriteTerminal(stdout, rep, color, *sortBy == "severity"); err != nil {
+		if err := report.WriteTerminalOptions(stdout, rep, report.TerminalOptions{Color: color, SeveritySort: *sortBy == "severity", Version: version}); err != nil {
 			fmt.Fprintf(stderr, "pgtuner: write terminal: %v\n", err)
 			return 2
 		}

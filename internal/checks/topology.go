@@ -28,6 +28,10 @@ func (TopologyCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 	if a := evalManager(p.Topology.Manager); a != nil {
 		out = append(out, *a)
 	}
+	out = append(out, evalPatroniCluster(p.Topology)...)
+	if a := evalPatroniError(p.PatroniError); a != nil {
+		out = append(out, *a)
+	}
 	if a := evalFlavor(p.Flavor); a != nil {
 		out = append(out, *a)
 	}
@@ -60,6 +64,7 @@ func evalTopology(t pgtuner.Topology) *pgtuner.Advice {
 		parts = append(parts, fmt.Sprintf("System identifier %s, timeline %d.", t.SystemID, t.Timeline))
 	}
 	a := pgtuner.Advice{
+		ID:      "topology.replication-role",
 		Level:   pgtuner.Info,
 		Section: "Topology",
 		Title:   "Replication topology: " + strings.ReplaceAll(t.Role, "_", " "),
@@ -112,6 +117,7 @@ func evalManager(m *pgtuner.Manager) *pgtuner.Advice {
 		return nil
 	}
 	a := pgtuner.Advice{
+		ID:      "topology.manager-detected",
 		Level:   pgtuner.Info,
 		Section: "Topology",
 		Title:   fmt.Sprintf("Cluster manager detected: %s (%s)", m.Name, m.Confidence),
@@ -131,6 +137,7 @@ func evalFlavor(f pgtuner.Flavor) *pgtuner.Advice {
 		return nil
 	}
 	a := pgtuner.Advice{
+		ID:      "topology.flavor-detected",
 		Level:   pgtuner.Info,
 		Section: "Topology",
 		Title:   "PostgreSQL distribution: " + f.Name,
@@ -147,3 +154,73 @@ func evalFlavor(f pgtuner.Flavor) *pgtuner.Advice {
 	}
 	return &a
 }
+
+// evalPatroniCluster reads the member list of the Patroni REST API. It runs only
+// when the API answered, so Manager.Confidence is "certain".
+// src: https://patroni.readthedocs.io/en/latest/pause.html
+func evalPatroniCluster(t pgtuner.Topology) []pgtuner.Advice {
+	m := t.Manager
+	if m == nil || m.Name != "patroni" || m.Confidence != "certain" || len(t.Members) == 0 {
+		return nil
+	}
+	var out []pgtuner.Advice
+	leader := false
+	for _, mem := range t.Members {
+		if mem.Role == "leader" || mem.Role == "standby_leader" {
+			leader = true
+		}
+		if !mem.Active {
+			out = append(out, pgtuner.Advice{
+				ID:      "topology.patroni-member-unhealthy",
+				Level:   pgtuner.Warn,
+				Section: "Topology",
+				Title:   fmt.Sprintf("Patroni member %s is %s", mem.Name, mem.State),
+				Message: fmt.Sprintf("Patroni lists %s (%s) in state %q. A healthy member is running or streaming.", mem.Name, mem.Role, mem.State),
+				Detail:  "Check the Patroni log on that node. Run patronictl list for the state of the whole cluster.",
+				DocRef:  docPatroni,
+			})
+		}
+	}
+	if !leader {
+		out = append(out, pgtuner.Advice{
+			ID:      "topology.patroni-no-leader",
+			Level:   pgtuner.Bad,
+			Section: "Topology",
+			Title:   "Patroni reports no leader",
+			Message: "No member has the leader role. No node accepts writes until Patroni elects one.",
+			Detail:  "Run patronictl list. Check that the DCS (etcd, Consul or ZooKeeper) is reachable from every node.",
+			DocRef:  docPatroni,
+		})
+	}
+	if m.Paused {
+		out = append(out, pgtuner.Advice{
+			ID:      "topology.patroni-paused",
+			Level:   pgtuner.Warn,
+			Section: "Topology",
+			Title:   "Patroni is in pause mode",
+			Message: "Patroni does not fail over by itself while it is paused. If the primary fails, nobody promotes a standby.",
+			Detail:  "Run patronictl resume when the maintenance is over.",
+			DocRef:  "https://patroni.readthedocs.io/en/latest/pause.html",
+		})
+	}
+	return out
+}
+
+// evalPatroniError reports that -patroni-url did not give a Patroni answer.
+func evalPatroniError(msg string) *pgtuner.Advice {
+	if msg == "" {
+		return nil
+	}
+	return &pgtuner.Advice{
+		ID:      "topology.patroni-api-failed",
+		Level:   pgtuner.Unknown,
+		Section: "Topology",
+		Title:   "Patroni REST API did not answer",
+		Message: "pgtuner could not read the cluster from the URL in -patroni-url: " + msg + ".",
+		Detail:  "Check the URL and that port 8008 (the default) is open from this host. Without the API, pgtuner can only guess from names.",
+		DocRef:  docPatroni,
+	}
+}
+
+// src: https://patroni.readthedocs.io/en/latest/rest_api.html
+const docPatroni = "https://patroni.readthedocs.io/en/latest/rest_api.html"

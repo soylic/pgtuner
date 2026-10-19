@@ -41,6 +41,10 @@ type Member struct {
 	Port   int    `json:"port,omitempty"`
 	Role   string `json:"role,omitempty"`
 	Active bool   `json:"active"`
+	// State, Timeline and LagBytes come from the Patroni REST API only. LagBytes is nil when unknown.
+	State    string `json:"state,omitempty"`
+	Timeline int    `json:"timeline,omitempty"`
+	LagBytes *int64 `json:"lag_bytes,omitempty"`
 }
 
 // Manager names a detected failover manager or cluster extension.
@@ -49,4 +53,6 @@ type Manager struct {
 	// Confidence is "certain" when a catalog proves it, else "probable" or "possible".
 	Confidence string   `json:"confidence"`
 	Evidence   []string `json:"evidence"`
+	// Paused is true when Patroni runs in pause mode, so it does not fail over by itself.
+	Paused bool `json:"paused,omitempty"`
 }

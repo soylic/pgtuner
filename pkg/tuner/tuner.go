@@ -9,13 +9,31 @@ import (
 
 	"github.com/soylic/pgtuner/internal/checks"
 	"github.com/soylic/pgtuner/internal/osinspect"
+	"github.com/soylic/pgtuner/internal/patroni"
 	"github.com/soylic/pgtuner/internal/pg"
 	"github.com/soylic/pgtuner/pkg/pgtuner"
 )
 
-// Analyze connects to PostgreSQL, runs all checks, and returns a Report.
+// pgOptions maps the public options to connection options.
+func pgOptions(o pgtuner.Options) pg.Options {
+	return pg.Options{DSN: o.DSN, StatementTimeout: o.StatementTimeout}
+}
+
+// Analyze connects to PostgreSQL, runs the checks, and returns a Report.
 func Analyze(ctx context.Context, o pgtuner.Options) (*pgtuner.Report, error) {
-	conn, err := pg.Connect(ctx, pg.Options{DSN: o.DSN})
+	for _, p := range o.Ignore {
+		if err := pgtuner.ValidateIDPattern(p); err != nil {
+			return nil, err
+		}
+	}
+	// Validate the check names before any connection, so a typo fails fast.
+	all, err := checks.Default().Select(o.Only, o.Skip)
+	if err != nil {
+		return nil, err
+	}
+
+	opts := pgOptions(o)
+	conn, err := pg.Connect(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("connect: %w", err)
 	}
@@ -37,57 +55,96 @@ func Analyze(ctx context.Context, o pgtuner.Options) (*pgtuner.Report, error) {
 	role, _ := pg.DetectRole(ctx, conn)
 	topology := pg.DetectTopology(ctx, conn, role, settings)
 	flavor := pg.DetectFlavor(ctx, conn, settings)
+	patroniErr := ""
+	if o.PatroniURL != "" {
+		patroniErr = applyPatroni(ctx, &topology, o.PatroniURL)
+	}
 
 	baseProbe := &checks.Probe{
-		Conn:     conn,
-		Settings: settings,
-		Version:  conn.Version,
-		OS:       inspector,
-		Now:      o.Now,
-		Role:     role,
-		Topology: topology,
-		Flavor:   flavor,
+		Conn:         conn,
+		Settings:     settings,
+		Version:      conn.Version,
+		OS:           inspector,
+		Now:          o.Now,
+		Role:         role,
+		Topology:     topology,
+		Flavor:       flavor,
+		PatroniError: patroniErr,
 	}
 
+	var advice []pgtuner.Advice
+	var dbNames []string
 	if !o.AllDatabases {
-		advice := checks.Default().RunAll(ctx, baseProbe)
-		return withContext(pgtuner.NewReport(conn.Version.String(), advice), topology, flavor), nil
-	}
+		advice = all.RunAll(ctx, baseProbe)
+	} else {
+		// Cluster-wide checks run once. Per-database checks run on each user database over its own connection.
+		cluster := checks.ClusterWide().Filter(o.Only, o.Skip)
+		perDB := checks.PerDatabase().Filter(o.Only, o.Skip)
+		advice = cluster.RunAll(ctx, baseProbe)
 
-	// Cluster-wide checks run once. Per-database checks run on each user database over its own connection.
-	advice := checks.ClusterWide().RunAll(ctx, baseProbe)
-
-	dbNames, err := pg.ListUserDatabases(ctx, conn)
-	if err != nil {
-		return nil, fmt.Errorf("list databases: %w", err)
-	}
-
-	perDB := checks.PerDatabase()
-	for _, db := range dbNames {
-		dbAdvice, err := analyzeDatabase(ctx, o.DSN, db, inspector, o.Now, role, perDB)
+		dbNames, err = pg.ListUserDatabases(ctx, conn)
 		if err != nil {
-			// Report an Unknown so the other databases still get analyzed.
-			advice = append(advice, dbFailureAdvice(db, err))
-			continue
+			return nil, fmt.Errorf("list databases: %w", err)
 		}
-		advice = append(advice, dbAdvice...)
+		for _, db := range dbNames {
+			dbAdvice, err := analyzeDatabase(ctx, opts, db, inspector, o.Now, role, perDB)
+			if err != nil {
+				// Report an Unknown so the other databases still get analyzed.
+				advice = append(advice, dbFailureAdvice(db, err))
+				continue
+			}
+			advice = append(advice, dbAdvice...)
+		}
 	}
 
-	rep := withContext(pgtuner.NewReport(conn.Version.String(), advice), topology, flavor)
+	advice = checks.AdaptToEnvironment(advice, settings, topology, flavor)
+	advice, ignored := pgtuner.FilterIgnored(advice, o.Ignore)
+
+	rep := pgtuner.NewReport(conn.Version.String(), advice)
+	rep.Topology = &topology
+	rep.Flavor = &flavor
+	rep.Ignored = ignored
 	rep.Databases = dbNames
 	return rep, nil
 }
 
-// withContext attaches the topology and flavor to the report.
-func withContext(r *pgtuner.Report, t pgtuner.Topology, f pgtuner.Flavor) *pgtuner.Report {
-	r.Topology = &t
-	r.Flavor = &f
-	return r
+// applyPatroni asks the Patroni REST API for the member list. On success it
+// makes the Patroni match certain and returns "". On failure it returns the
+// reason and leaves the topology as the SQL probes found it.
+func applyPatroni(ctx context.Context, t *pgtuner.Topology, rawURL string) string {
+	base, err := patroni.BaseURL(rawURL)
+	if err != nil {
+		return err.Error()
+	}
+	cl, err := patroni.Fetch(ctx, base)
+	if err != nil {
+		return err.Error()
+	}
+	evidence := []string{fmt.Sprintf("the REST API at %s lists cluster %q", base, cl.Scope)}
+	if t.Manager != nil {
+		evidence = append(evidence, t.Manager.Evidence...)
+	}
+	t.Manager = &pgtuner.Manager{Name: "patroni", Confidence: "certain", Evidence: evidence, Paused: cl.Paused}
+	t.Members = nil
+	for _, m := range cl.Members {
+		mem := pgtuner.Member{
+			Name: m.Name, Host: m.Host, Port: m.Port, Role: m.Role,
+			State: m.State, Timeline: m.Timeline,
+			Active: m.State == "running" || m.State == "streaming",
+		}
+		if m.LagBytes >= 0 {
+			lag := m.LagBytes
+			mem.LagBytes = &lag
+		}
+		t.Members = append(t.Members, mem)
+	}
+	return ""
 }
 
 // dbFailureAdvice builds the Unknown advice for a database that failed to connect or load settings.
 func dbFailureAdvice(db string, err error) pgtuner.Advice {
 	return pgtuner.Advice{
+		ID:       "analysis.database-failed",
 		Level:    pgtuner.Unknown,
 		Section:  "Per-Database",
 		Title:    "Database analysis failed",
@@ -97,8 +154,8 @@ func dbFailureAdvice(db string, err error) pgtuner.Advice {
 }
 
 // analyzeDatabase runs the per-database registry on one database and tags the advice with its name.
-func analyzeDatabase(ctx context.Context, dsn, db string, inspector osinspect.Inspector, now time.Time, role pg.Role, perDB checks.Registry) ([]pgtuner.Advice, error) {
-	dbConn, err := pg.ConnectDB(ctx, dsn, db)
+func analyzeDatabase(ctx context.Context, opts pg.Options, db string, inspector osinspect.Inspector, now time.Time, role pg.Role, perDB checks.Registry) ([]pgtuner.Advice, error) {
+	dbConn, err := pg.ConnectDB(ctx, opts, db)
 	if err != nil {
 		return nil, fmt.Errorf("connect: %w", err)
 	}

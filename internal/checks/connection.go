@@ -46,6 +46,7 @@ func (ConnectionCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 
 	if listenAll && !sslOn {
 		out = append(out, pgtuner.Advice{
+			ID:      "connection.listen-all-without-ssl",
 			Level:   pgtuner.Warn,
 			Section: section,
 			Title:   "Listening on all interfaces without SSL",
@@ -55,6 +56,7 @@ func (ConnectionCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 		})
 	} else if !sslOn {
 		out = append(out, pgtuner.Advice{
+			ID:      "connection.ssl-disabled",
 			Level:   pgtuner.Warn,
 			Section: section,
 			Title:   "SSL disabled",
@@ -68,6 +70,7 @@ func (ConnectionCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 	maxConns, hasMaxConns := p.Settings.Int("max_connections")
 	if hasMaxConns && maxConns > connPoolerThreshold {
 		out = append(out, pgtuner.Advice{
+			ID:      "connection.max-connections-high",
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "High max_connections; consider a connection pooler",
@@ -92,6 +95,7 @@ func (ConnectionCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 		case err == nil:
 			if effMem > 0 && float64(worstBytes) > ramExhaustFraction*float64(effMem) {
 				out = append(out, pgtuner.Advice{
+					ID:      "connection.work-mem-exhausts-ram",
 					Level:   pgtuner.Bad,
 					Section: section,
 					Title:   "work_mem × max_connections can exhaust RAM",
@@ -102,6 +106,7 @@ func (ConnectionCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 			}
 		case err == osinspect.ErrNoOSFacts:
 			out = append(out, pgtuner.Advice{
+				ID:      "connection.ram-headroom-unverifiable",
 				Level:   pgtuner.Info,
 				Section: section,
 				Title:   "Cannot verify RAM headroom (no OS facts)",
@@ -113,6 +118,7 @@ func (ConnectionCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 
 	if len(out) == 0 {
 		out = append(out, pgtuner.Advice{
+			ID:      "connection.settings-ok",
 			Level:   pgtuner.OK,
 			Section: section,
 			Title:   "Connection settings look healthy",

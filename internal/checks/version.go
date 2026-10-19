@@ -39,6 +39,7 @@ func (VersionCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 	eol, known := eolDates[v.Major]
 	if !known {
 		return []pgtuner.Advice{{
+			ID:      "version.eol-unknown",
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   fmt.Sprintf("EOL date unknown for PostgreSQL %d", v.Major),
@@ -50,6 +51,7 @@ func (VersionCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 	switch {
 	case now.After(eol):
 		return []pgtuner.Advice{{
+			ID:      "version.end-of-life",
 			Level:   pgtuner.Bad,
 			Section: section,
 			Title:   fmt.Sprintf("PostgreSQL %d is end-of-life", v.Major),
@@ -60,6 +62,7 @@ func (VersionCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 	case now.Add(eolWarnWindow).After(eol):
 		daysLeft := int(eol.Sub(now).Hours() / 24)
 		return []pgtuner.Advice{{
+			ID:      "version.eol-approaching",
 			Level:   pgtuner.Warn,
 			Section: section,
 			Title:   fmt.Sprintf("PostgreSQL %d reaches end-of-life in %d days", v.Major, daysLeft),
@@ -69,6 +72,7 @@ func (VersionCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 
 	default:
 		return []pgtuner.Advice{{
+			ID:      "version.supported",
 			Level:   pgtuner.OK,
 			Section: section,
 			Title:   fmt.Sprintf("PostgreSQL %d is supported", v.Major),

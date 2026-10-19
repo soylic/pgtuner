@@ -42,6 +42,7 @@ func evalCacheHitRatio(blksHit, blksRead int64) []pgtuner.Advice {
 	total := blksHit + blksRead
 	if total == 0 {
 		return []pgtuner.Advice{{
+			ID:      "cache.no-activity",
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "No buffer activity recorded yet",
@@ -53,6 +54,7 @@ func evalCacheHitRatio(blksHit, blksRead int64) []pgtuner.Advice {
 	ratio := float64(blksHit) / float64(total)
 	if ratio < cacheHitRatioWarnThreshold {
 		return []pgtuner.Advice{{
+			ID:      "cache.hit-ratio-low",
 			Level:   pgtuner.Warn,
 			Section: section,
 			Title:   "Buffer cache hit ratio is low",
@@ -84,6 +86,7 @@ func evalIndexHitRatio(idxHit, idxRead *int64) []pgtuner.Advice {
 	ratio := float64(*idxHit) / float64(total)
 	if ratio < indexHitRatioInfoThreshold {
 		return []pgtuner.Advice{{
+			ID:      "cache.index-hit-ratio-low",
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "Index block cache hit ratio is low",
@@ -115,6 +118,7 @@ func evalTableHitRatio(heapHit, heapRead *int64) []pgtuner.Advice {
 	ratio := float64(*heapHit) / float64(total)
 	if ratio < tableHitRatioInfoThreshold {
 		return []pgtuner.Advice{{
+			ID:      "cache.table-hit-ratio-low",
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "Table block cache hit ratio is low",
@@ -139,6 +143,7 @@ func (CacheCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 	var blksHit, blksRead int64
 	if err := p.Conn.QueryRow(ctx, bufSQL).Scan(&blksHit, &blksRead); err != nil {
 		out = append(out, pgtuner.Advice{
+			ID:      "cache.hit-ratio-query-failed",
 			Level:   pgtuner.Unknown,
 			Section: section,
 			Title:   "Buffer cache stats unavailable",
@@ -154,6 +159,7 @@ func (CacheCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 	var idxHit, idxRead *int64
 	if err := p.Conn.QueryRow(ctx, idxSQL).Scan(&idxHit, &idxRead); err != nil {
 		out = append(out, pgtuner.Advice{
+			ID:      "cache.index-hit-ratio-query-failed",
 			Level:   pgtuner.Unknown,
 			Section: section,
 			Title:   "Index cache stats unavailable",
@@ -169,6 +175,7 @@ func (CacheCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 	var heapHit, heapRead *int64
 	if err := p.Conn.QueryRow(ctx, tblSQL).Scan(&heapHit, &heapRead); err != nil {
 		out = append(out, pgtuner.Advice{
+			ID:      "cache.table-hit-ratio-query-failed",
 			Level:   pgtuner.Unknown,
 			Section: section,
 			Title:   "Table cache stats unavailable",
@@ -180,6 +187,7 @@ func (CacheCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 
 	if len(out) == 0 {
 		out = append(out, pgtuner.Advice{
+			ID:      "cache.hit-ratio-ok",
 			Level:   pgtuner.OK,
 			Section: section,
 			Title:   "Cache hit ratios look healthy",

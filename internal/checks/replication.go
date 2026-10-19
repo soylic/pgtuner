@@ -54,6 +54,7 @@ func evalInactiveSlots(names []string) *pgtuner.Advice {
 		return nil
 	}
 	a := pgtuner.Advice{
+		ID:      "replication.slot-inactive",
 		Level:   pgtuner.Warn,
 		Section: "Replication",
 		Title:   "Inactive replication slot(s) retain WAL and can fill the disk",
@@ -72,6 +73,7 @@ func evalRoleInfo(r pg.Role) pgtuner.Advice {
 	switch r.Role {
 	case pg.RolePrimary:
 		return pgtuner.Advice{
+			ID:      "replication.role-primary",
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "This server is a PRIMARY",
@@ -80,6 +82,7 @@ func evalRoleInfo(r pg.Role) pgtuner.Advice {
 		}
 	case pg.RoleStandby:
 		return pgtuner.Advice{
+			ID:      "replication.role-standby",
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "This server is a STANDBY (in recovery)",
@@ -88,6 +91,7 @@ func evalRoleInfo(r pg.Role) pgtuner.Advice {
 		}
 	case pg.RoleStandalone:
 		return pgtuner.Advice{
+			ID:      "replication.role-standalone",
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "This server is standalone (no replication)",
@@ -96,6 +100,7 @@ func evalRoleInfo(r pg.Role) pgtuner.Advice {
 		}
 	default:
 		return pgtuner.Advice{
+			ID:      "replication.role-unknown",
 			Level:   pgtuner.Unknown,
 			Section: section,
 			Title:   "Replication role could not be determined",
@@ -116,6 +121,7 @@ func evalStandbyArchiveDelay(rawVal string) []pgtuner.Advice {
 	const section = "Replication"
 	if rawVal == "0" {
 		return []pgtuner.Advice{{
+			ID:      "replication.standby-archive-delay-zero",
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "max_standby_archive_delay=0: queries cancelled immediately during archive recovery conflicts",
@@ -138,6 +144,7 @@ func evalStandbyStreamingDelayHigh(delayMs int64) []pgtuner.Advice {
 			label = "-1 (wait forever)"
 		}
 		return []pgtuner.Advice{{
+			ID:      "replication.standby-streaming-delay-high",
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "max_standby_streaming_delay is very high: long conflict waits can cause primary bloat",
@@ -157,6 +164,7 @@ func evalHotStandbyFeedbackOn(feedbackOn bool) []pgtuner.Advice {
 	const section = "Replication"
 	if feedbackOn {
 		return []pgtuner.Advice{{
+			ID:      "replication.hot-standby-feedback-on",
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "hot_standby_feedback=on: prevents query cancellations but can increase primary bloat",
@@ -187,6 +195,7 @@ func evalReplicationLag(rows []ReplicaRow, syncStandbyNames string) []pgtuner.Ad
 	for _, r := range rows {
 		if r.ReplayLagSecs != nil && *r.ReplayLagSecs > replicationLagWarnSeconds {
 			out = append(out, pgtuner.Advice{
+				ID:      "replication.standby-replay-lag",
 				Level:   pgtuner.Warn,
 				Section: section,
 				Title:   fmt.Sprintf("Standby %q has significant replay lag", r.ApplicationName),
@@ -209,6 +218,7 @@ func evalReplicationLag(rows []ReplicaRow, syncStandbyNames string) []pgtuner.Ad
 		}
 		if !hasSyncStandby {
 			out = append(out, pgtuner.Advice{
+				ID:      "replication.sync-standby-missing",
 				Level:   pgtuner.Warn,
 				Section: section,
 				Title:   "synchronous_standby_names is set but no standby is in sync state",
@@ -232,6 +242,7 @@ func evalWalLevelVsLogical(walLevel string, logicalSlots, pubCount int) *pgtuner
 		return nil
 	}
 	a := pgtuner.Advice{
+		ID:      "replication.wal-level-not-logical",
 		Level:   pgtuner.Bad,
 		Section: "Replication",
 		Title:   "wal_level must be 'logical' for logical replication to function",
@@ -259,6 +270,7 @@ func (ReplicationCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 	// src: https://www.postgresql.org/docs/current/runtime-config-replication.html#GUC-MAX-WAL-SENDERS
 	if mws, ok := p.Settings.Int("max_wal_senders"); ok && mws == 0 {
 		out = append(out, pgtuner.Advice{
+			ID:      "replication.max-wal-senders-zero",
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "max_wal_senders=0; no streaming replication or WAL-streaming backup possible",
@@ -281,6 +293,7 @@ func (ReplicationCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 	slotRows, err := p.Conn.Query(ctx, inactiveSlotsSQL)
 	if err != nil {
 		out = append(out, pgtuner.Advice{
+			ID:      "replication.slot-query-failed",
 			Level:   pgtuner.Unknown,
 			Section: section,
 			Title:   "Replication slot query failed",
@@ -294,6 +307,7 @@ func (ReplicationCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 				var name string
 				if err := slotRows.Scan(&name); err != nil {
 					out = append(out, pgtuner.Advice{
+						ID:      "replication.slot-scan-failed",
 						Level:   pgtuner.Unknown,
 						Section: section,
 						Title:   "Replication slot scan failed",
@@ -305,6 +319,7 @@ func (ReplicationCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 			}
 			if err := slotRows.Err(); err != nil {
 				out = append(out, pgtuner.Advice{
+					ID:      "replication.slot-iteration-failed",
 					Level:   pgtuner.Unknown,
 					Section: section,
 					Title:   "Replication slot iteration failed",
@@ -326,6 +341,7 @@ func (ReplicationCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 		spillRows, err := p.Conn.Query(ctx, spillSQL, replicationSlotSpillWarnThreshold)
 		if err != nil {
 			out = append(out, pgtuner.Advice{
+				ID:      "replication.slot-spill-stats-unavailable",
 				Level:   pgtuner.Unknown,
 				Section: section,
 				Title:   "Replication slot spill stats unavailable",
@@ -339,6 +355,7 @@ func (ReplicationCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 					var spillBytes int64
 					if err := spillRows.Scan(&slotName, &spillBytes); err != nil {
 						out = append(out, pgtuner.Advice{
+							ID:      "replication.slot-spill-scan-failed",
 							Level:   pgtuner.Unknown,
 							Section: section,
 							Title:   "Replication spill scan failed",
@@ -347,6 +364,7 @@ func (ReplicationCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 						return
 					}
 					out = append(out, pgtuner.Advice{
+						ID:      "replication.slot-spill-large",
 						Level:   pgtuner.Info,
 						Section: section,
 						Title:   fmt.Sprintf("Replication slot %q has large WAL spill (PG14+)", slotName),
@@ -357,6 +375,7 @@ func (ReplicationCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 				}
 				if err := spillRows.Err(); err != nil {
 					out = append(out, pgtuner.Advice{
+						ID:      "replication.slot-spill-stats-query-failed",
 						Level:   pgtuner.Unknown,
 						Section: section,
 						Title:   "Replication spill stats unavailable",
@@ -382,6 +401,7 @@ func runStandbyChecks(ctx context.Context, p *Probe) []pgtuner.Advice {
 	// src: https://www.postgresql.org/docs/current/hot-standby.html
 	if !p.Settings.Bool("hot_standby") {
 		out = append(out, pgtuner.Advice{
+			ID:      "replication.hot-standby-off",
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "hot_standby=off: read queries cannot run on this standby",
@@ -395,6 +415,7 @@ func runStandbyChecks(ctx context.Context, p *Probe) []pgtuner.Advice {
 	// src: https://www.postgresql.org/docs/current/runtime-config-replication.html#GUC-HOT-STANDBY-FEEDBACK
 	if !p.Settings.Bool("hot_standby_feedback") {
 		out = append(out, pgtuner.Advice{
+			ID:      "replication.hot-standby-feedback-off",
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "hot_standby_feedback=off: standby queries may be cancelled by primary vacuum",
@@ -413,6 +434,7 @@ func runStandbyChecks(ctx context.Context, p *Probe) []pgtuner.Advice {
 	if v, ok := p.Settings.Get("max_standby_streaming_delay"); ok {
 		if v == "0" {
 			out = append(out, pgtuner.Advice{
+				ID:      "replication.standby-streaming-delay-zero",
 				Level:   pgtuner.Info,
 				Section: section,
 				Title:   "max_standby_streaming_delay=0: standby queries cancelled immediately on conflict",
@@ -438,6 +460,7 @@ func runStandbyChecks(ctx context.Context, p *Probe) []pgtuner.Advice {
 		// Any error other than no rows is a query failure.
 		if strings.Contains(err.Error(), "no rows") {
 			out = append(out, pgtuner.Advice{
+				ID:      "replication.standby-receiver-missing",
 				Level:   pgtuner.Info,
 				Section: section,
 				Title:   "Standby has no active streaming receiver (pg_stat_wal_receiver is empty)",
@@ -446,6 +469,7 @@ func runStandbyChecks(ctx context.Context, p *Probe) []pgtuner.Advice {
 			})
 		} else {
 			out = append(out, pgtuner.Advice{
+				ID:      "replication.wal-receiver-query-failed",
 				Level:   pgtuner.Unknown,
 				Section: section,
 				Title:   "pg_stat_wal_receiver query failed",
@@ -474,6 +498,7 @@ func runPrimaryChecks(ctx context.Context, p *Probe) []pgtuner.Advice {
 	rows, err := p.Conn.Query(ctx, lagSQL)
 	if err != nil {
 		out = append(out, pgtuner.Advice{
+			ID:      "replication.lag-query-failed",
 			Level:   pgtuner.Unknown,
 			Section: section,
 			Title:   "pg_stat_replication lag query failed",
@@ -489,6 +514,7 @@ func runPrimaryChecks(ctx context.Context, p *Probe) []pgtuner.Advice {
 				var lagSecs *float64
 				if err := rows.Scan(&appName, &syncState, &lagSecs); err != nil {
 					out = append(out, pgtuner.Advice{
+						ID:      "replication.lag-scan-failed",
 						Level:   pgtuner.Unknown,
 						Section: section,
 						Title:   "pg_stat_replication lag scan failed",
@@ -505,6 +531,7 @@ func runPrimaryChecks(ctx context.Context, p *Probe) []pgtuner.Advice {
 			}
 			if err := rows.Err(); err != nil {
 				out = append(out, pgtuner.Advice{
+					ID:      "replication.lag-iteration-failed",
 					Level:   pgtuner.Unknown,
 					Section: section,
 					Title:   "pg_stat_replication iteration failed",
@@ -537,6 +564,7 @@ func runPrimaryChecks(ctx context.Context, p *Probe) []pgtuner.Advice {
 		var slotCount int
 		if err := p.Conn.QueryRow(ctx, "SELECT count(*) FROM pg_replication_slots").Scan(&slotCount); err != nil {
 			out = append(out, pgtuner.Advice{
+				ID:      "replication.wal-keep-slot-count-failed",
 				Level:   pgtuner.Unknown,
 				Section: section,
 				Title:   "Could not count replication slots for WAL-keep check",
@@ -548,6 +576,7 @@ func runPrimaryChecks(ctx context.Context, p *Probe) []pgtuner.Advice {
 				walKeepGUC = "wal_keep_segments"
 			}
 			out = append(out, pgtuner.Advice{
+				ID:      "replication.wal-keep-zero-no-slots",
 				Level:   pgtuner.Warn,
 				Section: section,
 				Title:   fmt.Sprintf("%s=0 with no replication slots: standbys may desync if WAL is recycled", walKeepGUC),
@@ -575,6 +604,7 @@ func runLogicalTypeChecks(ctx context.Context, p *Probe) []pgtuner.Advice {
 		"SELECT count(*) FROM pg_replication_slots WHERE slot_type = 'logical'",
 	).Scan(&logicalSlotCount); err != nil {
 		out = append(out, pgtuner.Advice{
+			ID:      "replication.logical-slot-count-failed",
 			Level:   pgtuner.Unknown,
 			Section: section,
 			Title:   "Could not count logical replication slots",
@@ -584,6 +614,7 @@ func runLogicalTypeChecks(ctx context.Context, p *Probe) []pgtuner.Advice {
 		logicalSlotCount = -1 // sentinel for a failed query
 	} else if logicalSlotCount > 0 {
 		out = append(out, pgtuner.Advice{
+			ID:      "replication.logical-decoding-in-use",
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   fmt.Sprintf("Logical decoding is in use (%d logical slot(s))", logicalSlotCount),
@@ -597,6 +628,7 @@ func runLogicalTypeChecks(ctx context.Context, p *Probe) []pgtuner.Advice {
 	var pubCount int
 	if err := p.Conn.QueryRow(ctx, "SELECT count(*) FROM pg_publication").Scan(&pubCount); err != nil {
 		out = append(out, pgtuner.Advice{
+			ID:      "replication.publication-count-failed",
 			Level:   pgtuner.Unknown,
 			Section: section,
 			Title:   "Could not count publications",
@@ -606,6 +638,7 @@ func runLogicalTypeChecks(ctx context.Context, p *Probe) []pgtuner.Advice {
 		pubCount = -1 // sentinel for a failed query
 	} else if pubCount > 0 {
 		out = append(out, pgtuner.Advice{
+			ID:      "replication.publisher-active",
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   fmt.Sprintf("Logical replication publisher: %d publication(s) defined", pubCount),
@@ -618,6 +651,7 @@ func runLogicalTypeChecks(ctx context.Context, p *Probe) []pgtuner.Advice {
 	var subCount int
 	if err := p.Conn.QueryRow(ctx, "SELECT count(*) FROM pg_subscription").Scan(&subCount); err != nil {
 		out = append(out, pgtuner.Advice{
+			ID:      "replication.subscription-count-failed",
 			Level:   pgtuner.Unknown,
 			Section: section,
 			Title:   "Could not count subscriptions",
@@ -627,6 +661,7 @@ func runLogicalTypeChecks(ctx context.Context, p *Probe) []pgtuner.Advice {
 		subCount = -1 // sentinel for a failed query
 	} else if subCount > 0 {
 		out = append(out, pgtuner.Advice{
+			ID:      "replication.subscriber-active",
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   fmt.Sprintf("Logical replication subscriber: %d subscription(s) active", subCount),
@@ -640,6 +675,7 @@ func runLogicalTypeChecks(ctx context.Context, p *Probe) []pgtuner.Advice {
 			"SELECT count(*) FROM pg_stat_subscription WHERE pid IS NOT NULL",
 		).Scan(&activeWorkers); err != nil {
 			out = append(out, pgtuner.Advice{
+				ID:      "replication.subscription-workers-query-failed",
 				Level:   pgtuner.Unknown,
 				Section: section,
 				Title:   "Could not query pg_stat_subscription apply workers",

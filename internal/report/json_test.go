@@ -10,6 +10,7 @@ import (
 func TestWriteJSON(t *testing.T) {
 	advice := []pgtuner.Advice{
 		{
+			ID:      "memory.shared-buffers-low",
 			Level:   pgtuner.Warn,
 			Section: "memory",
 			Title:   "shared_buffers low",
@@ -18,6 +19,7 @@ func TestWriteJSON(t *testing.T) {
 			DocRef:  "https://www.postgresql.org/docs/current/runtime-config-resource.html",
 		},
 		{
+			ID:      "security.ssl-ok",
 			Level:   pgtuner.OK,
 			Section: "security",
 			Title:   "ssl enabled",
@@ -35,6 +37,7 @@ func TestWriteJSON(t *testing.T) {
   "server_version": "16.2",
   "advice": [
     {
+      "id": "memory.shared-buffers-low",
       "level": "warn",
       "section": "memory",
       "title": "shared_buffers low",
@@ -43,6 +46,7 @@ func TestWriteJSON(t *testing.T) {
       "doc_ref": "https://www.postgresql.org/docs/current/runtime-config-resource.html"
     },
     {
+      "id": "security.ssl-ok",
       "level": "ok",
       "section": "security",
       "title": "ssl enabled",

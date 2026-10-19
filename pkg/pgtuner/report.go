@@ -8,6 +8,18 @@ type Options struct {
 	OSInspect    bool      // collect OS facts (Linux only)
 	Now          time.Time // clock for the version check. Zero means time.Now()
 	AllDatabases bool      // run per-database checks on every user database
+	// Skip lists check names to leave out. Only, when set, lists the only checks to run.
+	// Names are the Name() values, such as replication or autovacuum_settings.
+	Skip []string
+	Only []string
+	// Ignore drops findings whose ID matches. A pattern may end in * (connection.*).
+	// Ignored findings count in Report.Ignored, not in the summary or the grade.
+	Ignore []string
+	// StatementTimeout limits each query. Zero means 30 seconds. A negative value turns the limit off.
+	StatementTimeout time.Duration
+	// PatroniURL is the base URL of a Patroni REST API, such as http://pg1:8008.
+	// When set, pgtuner asks it for the member list and reports Patroni as certain.
+	PatroniURL string
 }
 
 // Report is the result of analyzing a server.
@@ -21,6 +33,8 @@ type Report struct {
 	// Topology and Flavor describe the analyzed server. Both are best-effort and may be nil.
 	Topology *Topology `json:"topology,omitempty"`
 	Flavor   *Flavor   `json:"flavor,omitempty"`
+	// Ignored counts the findings dropped by Options.Ignore.
+	Ignored int `json:"ignored,omitempty"`
 }
 
 // ExitCode returns 1 if any advice is Bad-level, else 0.

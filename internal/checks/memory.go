@@ -68,6 +68,7 @@ func (MemoryCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 	if err == osinspect.ErrNoOSFacts {
 		if hasSB {
 			out = append(out, pgtuner.Advice{
+				ID:      "memory.shared-buffers-no-os-facts",
 				Level:   pgtuner.Info,
 				Section: section,
 				Title:   "shared_buffers (no OS facts)",
@@ -77,6 +78,7 @@ func (MemoryCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 		}
 		if hasEC {
 			out = append(out, pgtuner.Advice{
+				ID:      "memory.effective-cache-size-no-os-facts",
 				Level:   pgtuner.Info,
 				Section: section,
 				Title:   "effective_cache_size (no OS facts)",
@@ -86,6 +88,7 @@ func (MemoryCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 		}
 		if hasMWM {
 			out = append(out, pgtuner.Advice{
+				ID:      "memory.maintenance-work-mem-no-os-facts",
 				Level:   pgtuner.Info,
 				Section: section,
 				Title:   "maintenance_work_mem (no OS facts)",
@@ -100,6 +103,7 @@ func (MemoryCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 	if total <= 0 {
 		// A bogus inspector may return zero.
 		return []pgtuner.Advice{{
+			ID:      "memory.cannot-evaluate",
 			Level:   pgtuner.Unknown,
 			Section: section,
 			Title:   "Cannot evaluate memory settings",
@@ -120,6 +124,7 @@ func (MemoryCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 		switch {
 		case frac < sharedBufsLowFrac:
 			out = append(out, pgtuner.Advice{
+				ID:      "memory.shared-buffers-low",
 				Level:   pgtuner.Warn,
 				Section: section,
 				Title:   "shared_buffers is too low",
@@ -129,6 +134,7 @@ func (MemoryCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 			})
 		case frac > sharedBufsHighFrac:
 			out = append(out, pgtuner.Advice{
+				ID:      "memory.shared-buffers-high",
 				Level:   pgtuner.Warn,
 				Section: section,
 				Title:   "shared_buffers may be too high",
@@ -138,6 +144,7 @@ func (MemoryCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 			})
 		default:
 			out = append(out, pgtuner.Advice{
+				ID:      "memory.shared-buffers-ok",
 				Level:   pgtuner.OK,
 				Section: section,
 				Title:   "shared_buffers is well-sized",
@@ -152,6 +159,7 @@ func (MemoryCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 		frac := float64(ecBytes) / float64(total)
 		if frac < effectiveCacheLowFrac {
 			out = append(out, pgtuner.Advice{
+				ID:      "memory.effective-cache-size-low",
 				Level:   pgtuner.Info,
 				Section: section,
 				Title:   "effective_cache_size may be underestimated",
@@ -173,6 +181,7 @@ func (MemoryCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 			pg17note = " On PostgreSQL 17+, VACUUM's TID-store uses maintenance_work_mem more efficiently. This setting therefore has an even greater effect."
 		}
 		out = append(out, pgtuner.Advice{
+			ID:      "memory.maintenance-work-mem-low",
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "maintenance_work_mem is low for this host",
@@ -184,6 +193,7 @@ func (MemoryCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 
 	if len(out) == 0 {
 		out = append(out, pgtuner.Advice{
+			ID:      "memory.settings-ok",
 			Level:   pgtuner.OK,
 			Section: section,
 			Title:   "Memory settings look healthy",

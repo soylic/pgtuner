@@ -30,6 +30,7 @@ type TerminalOptions struct {
 	Color        bool   // ANSI styles and the banner header
 	SeveritySort bool   // one flat list in r.Advice order instead of sections
 	Version      string // pgtuner version shown in the banner. Empty hides it
+	ShowIDs      bool   // print each finding's ID, for use with -ignore
 }
 
 // paint wraps s in the given styles when color is on.
@@ -97,7 +98,7 @@ func ColorEnabled(f *os.File) bool {
 	return term.IsTerminal(int(f.Fd()))
 }
 
-func writeAdvice(w io.Writer, a pgtuner.Advice, color bool) error {
+func writeAdvice(w io.Writer, a pgtuner.Advice, color, showID bool) error {
 	tag := paint(color, levelTag(a.Level), levelStyle(a.Level)...)
 	dbTag := ""
 	if a.Database != "" {
@@ -106,6 +107,11 @@ func writeAdvice(w io.Writer, a pgtuner.Advice, color bool) error {
 	title := paint(color, a.Title, ansiBold)
 	if _, err := fmt.Fprintf(w, "  %s  %s%s: %s\n", tag, dbTag, title, a.Message); err != nil {
 		return err
+	}
+	if showID && a.ID != "" {
+		if _, err := fmt.Fprintf(w, "          %s      %s\n", paint(color, "ID:", ansiDim), paint(color, a.ID, ansiDim)); err != nil {
+			return err
+		}
 	}
 	if a.Detail != "" {
 		if _, err := fmt.Fprintf(w, "          %s %s\n", paint(color, "Detail:", ansiDim), a.Detail); err != nil {
@@ -152,6 +158,28 @@ func writeBanner(w io.Writer, r *pgtuner.Report, version string) error {
 	return err
 }
 
+// levelName is the heading of a severity group.
+func levelName(l pgtuner.Level) string {
+	switch l {
+	case pgtuner.OK:
+		return "OK"
+	case pgtuner.Unknown:
+		return "Unknown"
+	default:
+		n := l.String()
+		return strings.ToUpper(n[:1]) + n[1:]
+	}
+}
+
+func writeLevelTitle(w io.Writer, l pgtuner.Level, n int, color bool) error {
+	if color {
+		_, err := fmt.Fprintf(w, "%s %s %s\n", paint(true, "▌", levelStyle(l)...), paint(true, levelName(l), levelStyle(l)...), paint(true, fmt.Sprintf("(%d)", n), ansiDim))
+		return err
+	}
+	_, err := fmt.Fprintf(w, "=== %s (%d) ===\n", levelName(l), n)
+	return err
+}
+
 func writeSectionTitle(w io.Writer, name string, color bool) error {
 	if color {
 		_, err := fmt.Fprintf(w, "%s %s\n", paint(true, "▌", ansiCyan), paint(true, name, ansiBold))
@@ -181,21 +209,33 @@ func WriteTerminalOptions(w io.Writer, r *pgtuner.Report, o TerminalOptions) err
 	}
 
 	if o.SeveritySort {
-		title := "Findings (by severity)"
-		if err := writeSectionTitle(w, title, color); err != nil {
-			return err
+		// r.Advice arrives sorted by severity, so each level forms one run.
+		counts := map[pgtuner.Level]int{}
+		for _, a := range r.Advice {
+			counts[a.Level]++
 		}
+		var prevLevel pgtuner.Level
 		prevSection := ""
 		first := true
 		for _, a := range r.Advice {
-			if first || a.Section != prevSection {
+			if first || a.Level != prevLevel {
+				if !first {
+					if _, err := fmt.Fprintln(w); err != nil {
+						return err
+					}
+				}
+				if err := writeLevelTitle(w, a.Level, counts[a.Level], color); err != nil {
+					return err
+				}
+				prevLevel, prevSection, first = a.Level, "", false
+			}
+			if a.Section != prevSection {
 				if _, err := fmt.Fprintf(w, "  %s\n", paint(color, "("+a.Section+")", ansiDim)); err != nil {
 					return err
 				}
 				prevSection = a.Section
-				first = false
 			}
-			if err := writeAdvice(w, a, color); err != nil {
+			if err := writeAdvice(w, a, color, o.ShowIDs); err != nil {
 				return err
 			}
 		}
@@ -217,7 +257,7 @@ func WriteTerminalOptions(w io.Writer, r *pgtuner.Report, o TerminalOptions) err
 				return err
 			}
 			for _, a := range grouped[sec] {
-				if err := writeAdvice(w, a, color); err != nil {
+				if err := writeAdvice(w, a, color, o.ShowIDs); err != nil {
 					return err
 				}
 			}
@@ -244,6 +284,14 @@ func WriteTerminalOptions(w io.Writer, r *pgtuner.Report, o TerminalOptions) err
 			return err
 		}
 	}
-	_, err := fmt.Fprintf(w, "   Grade: %s\n", paint(color, r.Grade(), gradeStyle(r.Grade())...))
+	if _, err := fmt.Fprintf(w, "   Grade: %s", paint(color, r.Grade(), gradeStyle(r.Grade())...)); err != nil {
+		return err
+	}
+	if r.Ignored > 0 {
+		if _, err := fmt.Fprintf(w, "   %s", paint(color, fmt.Sprintf("(%d ignored)", r.Ignored), ansiDim)); err != nil {
+			return err
+		}
+	}
+	_, err := fmt.Fprintln(w)
 	return err
 }

@@ -132,6 +132,7 @@ func evalUnusedIndexes(rows []UnusedIndexRow) []pgtuner.Advice {
 
 	capped, suffix := capList(names, schemaMessageCap)
 	return []pgtuner.Advice{{
+		ID:      "schema.index-unused",
 		Level:   pgtuner.Info,
 		Section: schemaSection,
 		Title:   fmt.Sprintf("Unused indexes detected (%d)", len(rows)),
@@ -158,6 +159,7 @@ func evalInvalidIndexes(rows []InvalidIndexRow) []pgtuner.Advice {
 
 	capped, suffix := capList(names, schemaMessageCap)
 	return []pgtuner.Advice{{
+		ID:      "schema.index-invalid",
 		Level:   pgtuner.Warn,
 		Section: schemaSection,
 		Title:   fmt.Sprintf("Invalid index(es) detected (%d)", len(rows)),
@@ -182,6 +184,7 @@ func evalDuplicateIndexes(groups []DuplicateIndexGroup) []pgtuner.Advice {
 
 	capped, suffix := capList(parts, schemaMessageCap)
 	return []pgtuner.Advice{{
+		ID:      "schema.index-duplicate",
 		Level:   pgtuner.Info,
 		Section: schemaSection,
 		Title:   fmt.Sprintf("Duplicate indexes detected (%d group(s))", len(groups)),
@@ -208,6 +211,7 @@ func evalNoPrimaryKey(rows []NoPKRow) []pgtuner.Advice {
 
 	capped, suffix := capList(names, schemaMessageCap)
 	return []pgtuner.Advice{{
+		ID:      "schema.table-no-primary-key",
 		Level:   pgtuner.Info,
 		Section: schemaSection,
 		Title:   fmt.Sprintf("Tables without a primary key (%d)", len(rows)),
@@ -234,6 +238,7 @@ func evalFKWithoutIndex(rows []FKNoIndexRow) []pgtuner.Advice {
 
 	capped, suffix := capList(names, schemaMessageCap)
 	return []pgtuner.Advice{{
+		ID:      "schema.fk-without-index",
 		Level:   pgtuner.Info,
 		Section: schemaSection,
 		Title:   fmt.Sprintf("Foreign key(s) without a supporting index (%d)", len(rows)),
@@ -263,6 +268,7 @@ func evalNeverAnalyzed(rows []NeverAnalyzedRow) []pgtuner.Advice {
 
 	capped, suffix := capList(names, schemaMessageCap)
 	return []pgtuner.Advice{{
+		ID:      "schema.table-never-analyzed",
 		Level:   pgtuner.Warn,
 		Section: schemaSection,
 		Title:   fmt.Sprintf("Tables never analyzed (stale planner stats) (%d)", len(rows)),
@@ -297,6 +303,7 @@ func evalBloat(rows []BloatRow) []pgtuner.Advice {
 
 	capped, suffix := capList(offenders, schemaMessageCap)
 	return []pgtuner.Advice{{
+		ID:      "schema.table-bloat-high",
 		Level:   pgtuner.Warn,
 		Section: schemaSection,
 		Title:   fmt.Sprintf("Table bloat estimate: high dead-tuple ratio (%d table(s))", len(offenders)),
@@ -321,6 +328,7 @@ func evalLargestRelations(rows []LargestRelRow) []pgtuner.Advice {
 	}
 
 	return []pgtuner.Advice{{
+		ID:      "schema.largest-tables",
 		Level:   pgtuner.Info,
 		Section: schemaSection,
 		Title:   fmt.Sprintf("Largest user tables overview (top %d)", len(rows)),
@@ -361,6 +369,7 @@ func (SchemaCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 
 	if len(out) == 0 {
 		out = append(out, pgtuner.Advice{
+			ID:      "schema.schema-ok",
 			Level:   pgtuner.OK,
 			Section: schemaSection,
 			Title:   "Schema looks healthy",
@@ -393,6 +402,7 @@ LIMIT 20`
 	rows, err := p.Conn.Query(ctx, sql, unusedIndexSizeThreshold)
 	if err != nil {
 		return []pgtuner.Advice{{
+			ID:      "schema.index-unused-query-failed",
 			Level:   pgtuner.Unknown,
 			Section: schemaSection,
 			Title:   "Unused index query failed",
@@ -407,6 +417,7 @@ LIMIT 20`
 		var r UnusedIndexRow
 		if err := rows.Scan(&r.SchemaName, &r.RelName, &r.IndexName, &r.SizeBytes); err != nil {
 			return []pgtuner.Advice{{
+				ID:      "schema.index-unused-scan-failed",
 				Level:   pgtuner.Unknown,
 				Section: schemaSection,
 				Title:   "Unused index scan failed",
@@ -418,6 +429,7 @@ LIMIT 20`
 	}
 	if err := rows.Err(); err != nil {
 		return []pgtuner.Advice{{
+			ID:      "schema.index-unused-iteration-failed",
 			Level:   pgtuner.Unknown,
 			Section: schemaSection,
 			Title:   "Unused index iteration failed",
@@ -448,6 +460,7 @@ LIMIT 20`
 	rows, err := p.Conn.Query(ctx, sql)
 	if err != nil {
 		return []pgtuner.Advice{{
+			ID:      "schema.index-invalid-query-failed",
 			Level:   pgtuner.Unknown,
 			Section: schemaSection,
 			Title:   "Invalid index query failed",
@@ -462,6 +475,7 @@ LIMIT 20`
 		var r InvalidIndexRow
 		if err := rows.Scan(&r.SchemaName, &r.RelName, &r.IndexName); err != nil {
 			return []pgtuner.Advice{{
+				ID:      "schema.index-invalid-scan-failed",
 				Level:   pgtuner.Unknown,
 				Section: schemaSection,
 				Title:   "Invalid index scan failed",
@@ -473,6 +487,7 @@ LIMIT 20`
 	}
 	if err := rows.Err(); err != nil {
 		return []pgtuner.Advice{{
+			ID:      "schema.index-invalid-iteration-failed",
 			Level:   pgtuner.Unknown,
 			Section: schemaSection,
 			Title:   "Invalid index iteration failed",
@@ -513,6 +528,7 @@ LIMIT 20`
 	rows, err := p.Conn.Query(ctx, sql)
 	if err != nil {
 		return []pgtuner.Advice{{
+			ID:      "schema.index-duplicate-query-failed",
 			Level:   pgtuner.Unknown,
 			Section: schemaSection,
 			Title:   "Duplicate index query failed",
@@ -528,6 +544,7 @@ LIMIT 20`
 		var names []string
 		if err := rows.Scan(&relName, &names); err != nil {
 			return []pgtuner.Advice{{
+				ID:      "schema.index-duplicate-scan-failed",
 				Level:   pgtuner.Unknown,
 				Section: schemaSection,
 				Title:   "Duplicate index scan failed",
@@ -539,6 +556,7 @@ LIMIT 20`
 	}
 	if err := rows.Err(); err != nil {
 		return []pgtuner.Advice{{
+			ID:      "schema.index-duplicate-iteration-failed",
 			Level:   pgtuner.Unknown,
 			Section: schemaSection,
 			Title:   "Duplicate index iteration failed",
@@ -569,6 +587,7 @@ LIMIT 20`
 	rows, err := p.Conn.Query(ctx, sql, noPKSizeThreshold)
 	if err != nil {
 		return []pgtuner.Advice{{
+			ID:      "schema.table-no-primary-key-query-failed",
 			Level:   pgtuner.Unknown,
 			Section: schemaSection,
 			Title:   "No-primary-key query failed",
@@ -583,6 +602,7 @@ LIMIT 20`
 		var r NoPKRow
 		if err := rows.Scan(&r.SchemaName, &r.RelName, &r.SizeBytes); err != nil {
 			return []pgtuner.Advice{{
+				ID:      "schema.table-no-primary-key-scan-failed",
 				Level:   pgtuner.Unknown,
 				Section: schemaSection,
 				Title:   "No-primary-key scan failed",
@@ -594,6 +614,7 @@ LIMIT 20`
 	}
 	if err := rows.Err(); err != nil {
 		return []pgtuner.Advice{{
+			ID:      "schema.table-no-primary-key-iteration-failed",
 			Level:   pgtuner.Unknown,
 			Section: schemaSection,
 			Title:   "No-primary-key iteration failed",
@@ -638,6 +659,7 @@ LIMIT 20`
 	rows, err := p.Conn.Query(ctx, sql)
 	if err != nil {
 		return []pgtuner.Advice{{
+			ID:      "schema.fk-without-index-query-failed",
 			Level:   pgtuner.Unknown,
 			Section: schemaSection,
 			Title:   "FK-without-index query failed",
@@ -652,6 +674,7 @@ LIMIT 20`
 		var r FKNoIndexRow
 		if err := rows.Scan(&r.SchemaName, &r.RelName, &r.ConstraintName); err != nil {
 			return []pgtuner.Advice{{
+				ID:      "schema.fk-without-index-scan-failed",
 				Level:   pgtuner.Unknown,
 				Section: schemaSection,
 				Title:   "FK-without-index scan failed",
@@ -663,6 +686,7 @@ LIMIT 20`
 	}
 	if err := rows.Err(); err != nil {
 		return []pgtuner.Advice{{
+			ID:      "schema.fk-without-index-iteration-failed",
 			Level:   pgtuner.Unknown,
 			Section: schemaSection,
 			Title:   "FK-without-index iteration failed",
@@ -691,6 +715,7 @@ LIMIT 20`
 	rows, err := p.Conn.Query(ctx, sql, neverAnalyzedLiveTupThreshold)
 	if err != nil {
 		return []pgtuner.Advice{{
+			ID:      "schema.table-never-analyzed-query-failed",
 			Level:   pgtuner.Unknown,
 			Section: schemaSection,
 			Title:   "Never-analyzed table query failed",
@@ -705,6 +730,7 @@ LIMIT 20`
 		var r NeverAnalyzedRow
 		if err := rows.Scan(&r.SchemaName, &r.RelName, &r.LiveTuples, &r.NeverVacuum); err != nil {
 			return []pgtuner.Advice{{
+				ID:      "schema.table-never-analyzed-scan-failed",
 				Level:   pgtuner.Unknown,
 				Section: schemaSection,
 				Title:   "Never-analyzed table scan failed",
@@ -716,6 +742,7 @@ LIMIT 20`
 	}
 	if err := rows.Err(); err != nil {
 		return []pgtuner.Advice{{
+			ID:      "schema.table-never-analyzed-iteration-failed",
 			Level:   pgtuner.Unknown,
 			Section: schemaSection,
 			Title:   "Never-analyzed table iteration failed",
@@ -744,6 +771,7 @@ LIMIT 20`
 	rows, err := p.Conn.Query(ctx, sql, bloatSizeThreshold)
 	if err != nil {
 		return []pgtuner.Advice{{
+			ID:      "schema.table-bloat-query-failed",
 			Level:   pgtuner.Unknown,
 			Section: schemaSection,
 			Title:   "Table bloat query failed",
@@ -758,6 +786,7 @@ LIMIT 20`
 		var r BloatRow
 		if err := rows.Scan(&r.SchemaName, &r.RelName, &r.DeadTuples, &r.LiveTuples, &r.SizeBytes); err != nil {
 			return []pgtuner.Advice{{
+				ID:      "schema.table-bloat-scan-failed",
 				Level:   pgtuner.Unknown,
 				Section: schemaSection,
 				Title:   "Table bloat scan failed",
@@ -769,6 +798,7 @@ LIMIT 20`
 	}
 	if err := rows.Err(); err != nil {
 		return []pgtuner.Advice{{
+			ID:      "schema.table-bloat-iteration-failed",
 			Level:   pgtuner.Unknown,
 			Section: schemaSection,
 			Title:   "Table bloat iteration failed",
@@ -793,6 +823,7 @@ LIMIT $1`
 	rows, err := p.Conn.Query(ctx, sql, largestRelationsN)
 	if err != nil {
 		return []pgtuner.Advice{{
+			ID:      "schema.largest-tables-query-failed",
 			Level:   pgtuner.Unknown,
 			Section: schemaSection,
 			Title:   "Largest relations query failed",
@@ -807,6 +838,7 @@ LIMIT $1`
 		var r LargestRelRow
 		if err := rows.Scan(&r.SchemaName, &r.RelName, &r.TotalBytes); err != nil {
 			return []pgtuner.Advice{{
+				ID:      "schema.largest-tables-scan-failed",
 				Level:   pgtuner.Unknown,
 				Section: schemaSection,
 				Title:   "Largest relations scan failed",
@@ -818,6 +850,7 @@ LIMIT $1`
 	}
 	if err := rows.Err(); err != nil {
 		return []pgtuner.Advice{{
+			ID:      "schema.largest-tables-iteration-failed",
 			Level:   pgtuner.Unknown,
 			Section: schemaSection,
 			Title:   "Largest relations iteration failed",

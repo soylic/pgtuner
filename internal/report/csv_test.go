@@ -10,6 +10,7 @@ import (
 func TestWriteCSV(t *testing.T) {
 	advice := []pgtuner.Advice{
 		{
+			ID:      "memory.shared-buffers-low",
 			Level:   pgtuner.Warn,
 			Section: "memory",
 			Title:   "shared_buffers low",
@@ -18,6 +19,7 @@ func TestWriteCSV(t *testing.T) {
 			DocRef:  "https://www.postgresql.org/docs/current/runtime-config-resource.html",
 		},
 		{
+			ID:       "cache.hit-ratio-low",
 			Level:    pgtuner.Info,
 			Section:  "cache",
 			Title:    "hit ratio",
@@ -25,6 +27,7 @@ func TestWriteCSV(t *testing.T) {
 			Database: "appdb",
 		},
 		{
+			ID:      "security.ssl-ok",
 			Level:   pgtuner.OK,
 			Section: "security",
 			Title:   "ssl enabled",
@@ -38,10 +41,10 @@ func TestWriteCSV(t *testing.T) {
 		t.Fatalf("WriteCSV: %v", err)
 	}
 
-	const want = `database,section,level,title,message,detail,doc_ref
-,memory,warn,shared_buffers low,"shared_buffers is below 25% of RAM, recommend raising.",Current value is 128MB.,https://www.postgresql.org/docs/current/runtime-config-resource.html
-appdb,cache,info,hit ratio,"Buffer cache hit ratio is ""98.85%"", below target.",,
-,security,ok,ssl enabled,SSL is enabled.,,
+	const want = `database,section,level,id,title,message,detail,doc_ref
+,memory,warn,memory.shared-buffers-low,shared_buffers low,"shared_buffers is below 25% of RAM, recommend raising.",Current value is 128MB.,https://www.postgresql.org/docs/current/runtime-config-resource.html
+appdb,cache,info,cache.hit-ratio-low,hit ratio,"Buffer cache hit ratio is ""98.85%"", below target.",,
+,security,ok,security.ssl-ok,ssl enabled,SSL is enabled.,,
 `
 	got := buf.String()
 	if got != want {

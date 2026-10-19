@@ -28,6 +28,7 @@ func evalSuperuserCount(n int64) *pgtuner.Advice {
 		return nil
 	}
 	a := pgtuner.Advice{
+		ID:      "security.superusers-many",
 		Level:   pgtuner.Warn,
 		Section: "Security",
 		Title:   fmt.Sprintf("%d superuser roles exist. Reduce the number of superuser accounts.", n),
@@ -54,6 +55,7 @@ func (SecurityCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 	var superuserCount int64
 	if err := p.Conn.QueryRow(ctx, superuserSQL).Scan(&superuserCount); err != nil {
 		out = append(out, pgtuner.Advice{
+			ID:      "security.superuser-count-query-failed",
 			Level:   pgtuner.Unknown,
 			Section: section,
 			Title:   "Superuser count unavailable",
@@ -67,6 +69,7 @@ func (SecurityCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 	// src: https://www.postgresql.org/docs/current/auth-password.html
 	if pe, ok := p.Settings.Get("password_encryption"); ok && pe == "md5" {
 		out = append(out, pgtuner.Advice{
+			ID:      "security.password-encryption-md5",
 			Level:   pgtuner.Warn,
 			Section: section,
 			Title:   "md5 password authentication is weak. Use scram-sha-256.",
@@ -84,6 +87,7 @@ func (SecurityCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 		var publicCreate bool
 		if err := p.Conn.QueryRow(ctx, publicCreateSQL).Scan(&publicCreate); err != nil {
 			out = append(out, pgtuner.Advice{
+				ID:      "security.public-schema-check-query-failed",
 				Level:   pgtuner.Unknown,
 				Section: section,
 				Title:   "Public-schema privilege check unavailable",
@@ -91,6 +95,7 @@ func (SecurityCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 			})
 		} else if publicCreate {
 			out = append(out, pgtuner.Advice{
+				ID:      "security.public-schema-create",
 				Level:   pgtuner.Warn,
 				Section: section,
 				Title:   "PUBLIC retains CREATE on schema public",
@@ -107,6 +112,7 @@ func (SecurityCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 	if p.Version.AtLeast(17, 0) {
 		if aas, ok := p.Settings.Get("allow_alter_system"); ok && aas == "on" {
 			out = append(out, pgtuner.Advice{
+				ID:      "security.allow-alter-system-on",
 				Level:   pgtuner.Info,
 				Section: section,
 				Title:   "allow_alter_system is on (default). Consider disabling it to harden the server (PG17+).",
@@ -119,6 +125,7 @@ func (SecurityCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 
 	if len(out) == 0 {
 		out = append(out, pgtuner.Advice{
+			ID:      "security.ok",
 			Level:   pgtuner.OK,
 			Section: section,
 			Title:   "Security configuration looks healthy",

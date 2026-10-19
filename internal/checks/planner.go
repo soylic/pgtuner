@@ -40,6 +40,7 @@ func evalRandomPageCostStorage(rotational *bool, rpc float64) *pgtuner.Advice {
 	if rotational == nil {
 		if rpc > randomPageCostSSDThreshold {
 			a := pgtuner.Advice{
+				ID:      "planner.random-page-cost-high-unknown-storage",
 				Level:   pgtuner.Info,
 				Section: "Planner",
 				Title:   "random_page_cost may be too high for SSD storage",
@@ -57,6 +58,7 @@ func evalRandomPageCostStorage(rotational *bool, rpc float64) *pgtuner.Advice {
 		// src: https://www.postgresql.org/docs/current/runtime-config-query.html#GUC-RANDOM-PAGE-COST
 		if rpc > randomPageCostSSDThreshold {
 			a := pgtuner.Advice{
+				ID:      "planner.random-page-cost-high-ssd",
 				Level:   pgtuner.Info,
 				Section: "Planner",
 				Title:   "random_page_cost is high for detected non-rotational storage",
@@ -73,6 +75,7 @@ func evalRandomPageCostStorage(rotational *bool, rpc float64) *pgtuner.Advice {
 	// src: https://www.postgresql.org/docs/current/runtime-config-query.html#GUC-RANDOM-PAGE-COST
 	if rpc < 2.0 {
 		a := pgtuner.Advice{
+			ID:      "planner.random-page-cost-low-hdd",
 			Level:   pgtuner.Info,
 			Section: "Planner",
 			Title:   "random_page_cost may be too low for spinning-disk storage",
@@ -128,6 +131,7 @@ func (PlannerCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 	// src: https://www.postgresql.org/docs/current/runtime-config-resource.html#GUC-EFFECTIVE-IO-CONCURRENCY
 	if eic, ok := p.Settings.Int("effective_io_concurrency"); ok && eic <= effectiveIOConcurrencyLowThreshold {
 		out = append(out, pgtuner.Advice{
+			ID:      "planner.effective-io-concurrency-low",
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "effective_io_concurrency is low",
@@ -140,6 +144,7 @@ func (PlannerCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 	// src: https://www.postgresql.org/docs/current/runtime-config-query.html#GUC-DEFAULT-STATISTICS-TARGET
 	if dst, ok := p.Settings.Int("default_statistics_target"); ok && dst < defaultStatisticsTargetLow {
 		out = append(out, pgtuner.Advice{
+			ID:      "planner.statistics-target-low",
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "default_statistics_target is below the recommended default",
@@ -151,6 +156,7 @@ func (PlannerCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 
 	if len(out) == 0 {
 		out = append(out, pgtuner.Advice{
+			ID:      "planner.planner-ok",
 			Level:   pgtuner.OK,
 			Section: section,
 			Title:   "Planner settings look healthy",

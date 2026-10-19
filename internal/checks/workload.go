@@ -59,6 +59,7 @@ func evalConnUtilization(used, max int64) *pgtuner.Advice {
 	switch {
 	case ratio > connUtilizationWarnThreshold:
 		a := pgtuner.Advice{
+			ID:      "workload.connections-high",
 			Level:   pgtuner.Warn,
 			Section: workloadSection,
 			Title:   "Connection utilization is high (>80%)",
@@ -73,6 +74,7 @@ func evalConnUtilization(used, max int64) *pgtuner.Advice {
 		return &a
 	case ratio > connUtilizationInfoThreshold:
 		a := pgtuner.Advice{
+			ID:      "workload.connections-moderate",
 			Level:   pgtuner.Info,
 			Section: workloadSection,
 			Title:   "Connection utilization is moderate (>60%)",
@@ -105,6 +107,7 @@ func evalIdleInTransaction(count int64, oldestSecs float64) *pgtuner.Advice {
 	}
 	if oldestSecs > idleInTransactionOldestWarnSecs {
 		a := pgtuner.Advice{
+			ID:      "workload.idle-in-transaction-long",
 			Level:   pgtuner.Warn,
 			Section: workloadSection,
 			Title:   fmt.Sprintf("Idle-in-transaction sessions detected (%d): oldest >5 min", count),
@@ -122,6 +125,7 @@ func evalIdleInTransaction(count int64, oldestSecs float64) *pgtuner.Advice {
 		return &a
 	}
 	a := pgtuner.Advice{
+		ID:      "workload.idle-in-transaction",
 		Level:   pgtuner.Info,
 		Section: workloadSection,
 		Title:   fmt.Sprintf("Idle-in-transaction sessions detected (%d)", count),
@@ -150,6 +154,7 @@ func evalLongRunningQueries(count int64, oldestSecs float64) *pgtuner.Advice {
 		return nil
 	}
 	a := pgtuner.Advice{
+		ID:      "workload.long-running-queries",
 		Level:   pgtuner.Info,
 		Section: workloadSection,
 		Title:   fmt.Sprintf("Long-running active queries detected (%d)", count),
@@ -174,6 +179,7 @@ func evalBlockedSessions(count int64) *pgtuner.Advice {
 		return nil
 	}
 	a := pgtuner.Advice{
+		ID:      "workload.blocked-sessions",
 		Level:   pgtuner.Warn,
 		Section: workloadSection,
 		Title:   fmt.Sprintf("Blocked sessions and lock waits detected (%d)", count),
@@ -198,6 +204,7 @@ func evalDanglingPreparedXacts(count int64, oldestSecs float64) *pgtuner.Advice 
 		return nil
 	}
 	a := pgtuner.Advice{
+		ID:      "workload.prepared-xacts-dangling",
 		Level:   pgtuner.Warn,
 		Section: workloadSection,
 		Title:   fmt.Sprintf("Dangling prepared transactions detected (%d)", count),
@@ -233,6 +240,7 @@ func (WorkloadCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 
 	if len(out) == 0 {
 		out = append(out, pgtuner.Advice{
+			ID:      "workload.ok",
 			Level:   pgtuner.OK,
 			Section: workloadSection,
 			Title:   "Workload looks healthy",
@@ -250,6 +258,7 @@ func runConnUtilization(ctx context.Context, p *Probe) []pgtuner.Advice {
 	maxConns, ok := p.Settings.Int("max_connections")
 	if !ok || maxConns <= 0 {
 		return []pgtuner.Advice{{
+			ID:      "workload.max-connections-unavailable",
 			Level:   pgtuner.Unknown,
 			Section: workloadSection,
 			Title:   "Connection utilization check skipped: max_connections unavailable",
@@ -263,6 +272,7 @@ func runConnUtilization(ctx context.Context, p *Probe) []pgtuner.Advice {
 	var used int64
 	if err := p.Conn.QueryRow(ctx, sql).Scan(&used); err != nil {
 		return []pgtuner.Advice{{
+			ID:      "workload.connections-query-failed",
 			Level:   pgtuner.Unknown,
 			Section: workloadSection,
 			Title:   "Connection utilization query failed",
@@ -293,6 +303,7 @@ WHERE state IN ('idle in transaction', 'idle in transaction (aborted)')`
 	var oldestSecs float64
 	if err := p.Conn.QueryRow(ctx, sql).Scan(&count, &oldestSecs); err != nil {
 		return []pgtuner.Advice{{
+			ID:      "workload.idle-in-transaction-query-failed",
 			Level:   pgtuner.Unknown,
 			Section: workloadSection,
 			Title:   "Idle-in-transaction query failed",
@@ -323,6 +334,7 @@ WHERE state = 'active'
 	var oldestSecs float64
 	if err := p.Conn.QueryRow(ctx, sql).Scan(&count, &oldestSecs); err != nil {
 		return []pgtuner.Advice{{
+			ID:      "workload.long-running-queries-query-failed",
 			Level:   pgtuner.Unknown,
 			Section: workloadSection,
 			Title:   "Long-running query check failed",
@@ -347,6 +359,7 @@ func runBlockedSessions(ctx context.Context, p *Probe) []pgtuner.Advice {
 	var count int64
 	if err := p.Conn.QueryRow(ctx, sql).Scan(&count); err != nil {
 		return []pgtuner.Advice{{
+			ID:      "workload.blocked-sessions-query-failed",
 			Level:   pgtuner.Unknown,
 			Section: workloadSection,
 			Title:   "Blocked sessions query failed",
@@ -373,6 +386,7 @@ FROM pg_prepared_xacts`
 	var oldestSecs float64
 	if err := p.Conn.QueryRow(ctx, sql).Scan(&count, &oldestSecs); err != nil {
 		return []pgtuner.Advice{{
+			ID:      "workload.prepared-xacts-query-failed",
 			Level:   pgtuner.Unknown,
 			Section: workloadSection,
 			Title:   "Prepared transactions query failed",

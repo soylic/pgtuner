@@ -24,7 +24,7 @@ func TestAnalyzeDatabaseConnectFailure(t *testing.T) {
 	ctx := context.Background()
 	const bogusDB = "pgtuner_does_not_exist_db_xyz"
 
-	advice, err := analyzeDatabase(ctx, dsn, bogusDB, osinspect.NoopInspector{}, time.Time{}, pg.Role{}, checks.PerDatabase())
+	advice, err := analyzeDatabase(ctx, pg.Options{DSN: dsn}, bogusDB, osinspect.NoopInspector{}, time.Time{}, pg.Role{}, checks.PerDatabase())
 	if err == nil {
 		t.Fatalf("expected analyzeDatabase to fail for nonexistent database %q, got advice=%v", bogusDB, advice)
 	}
@@ -33,6 +33,9 @@ func TestAnalyzeDatabaseConnectFailure(t *testing.T) {
 	}
 
 	a := dbFailureAdvice(bogusDB, err)
+	if a.ID != "analysis.database-failed" {
+		t.Errorf("ID: got %q, want analysis.database-failed", a.ID)
+	}
 	if a.Database != bogusDB {
 		t.Errorf("Database tag: got %q, want %q", a.Database, bogusDB)
 	}

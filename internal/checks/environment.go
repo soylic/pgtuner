@@ -25,6 +25,7 @@ func (EnvironmentCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 	env, err := p.OS.Environment()
 	if err == osinspect.ErrNoOSFacts {
 		return []pgtuner.Advice{{
+			ID:      "environment.host-access-required",
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "Environment detection requires host access",
@@ -33,6 +34,7 @@ func (EnvironmentCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 	}
 	if err != nil {
 		return []pgtuner.Advice{{
+			ID:      "environment.detection-failed",
 			Level:   pgtuner.Unknown,
 			Section: section,
 			Title:   "Environment detection failed",
@@ -47,6 +49,7 @@ func (EnvironmentCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 		cgroupDesc = "cgroup version unknown"
 	}
 	out = append(out, pgtuner.Advice{
+		ID:      "environment.detected",
 		Level:   pgtuner.Info,
 		Section: section,
 		Title:   fmt.Sprintf("Running on %s (%s)", env.Kind, cgroupDesc),
@@ -70,6 +73,7 @@ func (EnvironmentCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 			hostDesc = fmt.Sprintf(" (host has %.1f GiB)", hostGiB)
 		}
 		out = append(out, pgtuner.Advice{
+			ID:      "environment.cgroup-memory-limit",
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "Running under a cgroup memory limit",

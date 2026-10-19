@@ -1,6 +1,7 @@
 package checks
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -86,5 +87,27 @@ func TestRegistryScopeSplit(t *testing.T) {
 		if !wantPerDB[c.Name()] {
 			t.Errorf("unexpected per-database check %q", c.Name())
 		}
+	}
+}
+
+func TestRegistrySelect(t *testing.T) {
+	r := Default()
+	got, err := r.Select([]string{"wal", "cache"}, nil)
+	if err != nil || len(got) != 2 {
+		t.Fatalf("Select only = %v, %v", got.Names(), err)
+	}
+	got, err = r.Select(nil, []string{"wal"})
+	if err != nil || len(got) != len(r)-1 {
+		t.Fatalf("Select skip = %d checks, %v", len(got), err)
+	}
+	if _, err := r.Select([]string{"walll"}, nil); err == nil || !strings.Contains(err.Error(), "known:") {
+		t.Errorf("a typo must be an error that lists the known names, got %v", err)
+	}
+	// A scoped registry filters without rejecting names that live in the other scope.
+	if n := len(ClusterWide().Filter([]string{"cache", "wal"}, nil)); n != 1 {
+		t.Errorf("ClusterWide().Filter(cache, wal) kept %d checks, want 1 (wal)", n)
+	}
+	if n := len(PerDatabase().Filter([]string{"cache", "wal"}, nil)); n != 1 {
+		t.Errorf("PerDatabase().Filter(cache, wal) kept %d checks, want 1 (cache)", n)
 	}
 }

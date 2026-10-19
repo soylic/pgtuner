@@ -104,6 +104,7 @@ func evalTopQueryByTime(rows []queryStatsRow) []pgtuner.Advice {
 	}
 
 	return []pgtuner.Advice{{
+		ID:      "querystats.top-queries-by-time",
 		Level:   pgtuner.Info,
 		Section: queryStatsSection,
 		Title:   fmt.Sprintf("Top %d queries by total execution time (pg_stat_statements)", n),
@@ -159,6 +160,7 @@ func evalLowCacheHitQueries(rows []queryStatsRow) []pgtuner.Advice {
 	}
 
 	return []pgtuner.Advice{{
+		ID:      "querystats.low-cache-hit-queries",
 		Level:   pgtuner.Info,
 		Section: queryStatsSection,
 		Title:   fmt.Sprintf("Queries with low shared-buffer hit ratio (%d)", len(offenders)),
@@ -212,6 +214,7 @@ func evalTempHeavyQueries(rows []queryStatsRow) []pgtuner.Advice {
 	}
 
 	return []pgtuner.Advice{{
+		ID:      "querystats.high-temp-file-queries",
 		Level:   pgtuner.Info,
 		Section: queryStatsSection,
 		Title:   fmt.Sprintf("Queries with high temp-file usage (%d)", len(offenders)),
@@ -248,6 +251,7 @@ func (QueryStatsCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 		// No rows means the extension is absent. Any other error is a query failure.
 		if !isNoRows(err) {
 			return []pgtuner.Advice{{
+				ID:      "querystats.statements-detect-query-failed",
 				Level:   pgtuner.Unknown,
 				Section: queryStatsSection,
 				Title:   "pg_stat_statements detection query failed",
@@ -260,6 +264,7 @@ func (QueryStatsCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 
 	if present == 0 {
 		return []pgtuner.Advice{{
+			ID:      "querystats.statements-not-installed",
 			Level:   pgtuner.Info,
 			Section: queryStatsSection,
 			Title:   "pg_stat_statements is not installed",
@@ -273,6 +278,7 @@ func (QueryStatsCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 	rows, fetchErr := fetchQueryStats(ctx, p)
 	if fetchErr != nil {
 		return []pgtuner.Advice{{
+			ID:      "querystats.statements-query-failed",
 			Level:   pgtuner.Unknown,
 			Section: queryStatsSection,
 			Title:   "pg_stat_statements query failed",
@@ -288,6 +294,7 @@ func (QueryStatsCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 
 	if len(out) == 0 {
 		out = append(out, pgtuner.Advice{
+			ID:      "querystats.querystats-ok",
 			Level:   pgtuner.OK,
 			Section: queryStatsSection,
 			Title:   "Query performance looks healthy",

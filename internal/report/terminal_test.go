@@ -74,8 +74,8 @@ func TestWriteTerminalSeveritySort(t *testing.T) {
 		t.Fatalf("WriteTerminal: %v", err)
 	}
 	got := buf.Bytes()
-	if !bytes.Contains(got, []byte("=== Findings (by severity) ===")) {
-		t.Errorf("expected severity-sorted header, got:\n%s", got)
+	if !bytes.Contains(got, []byte("=== Bad (1) ===")) || !bytes.Contains(got, []byte("=== Info (1) ===")) {
+		t.Errorf("expected one heading per level, got:\n%s", got)
 	}
 	if !bytes.Contains(got, []byte("(wal)")) || !bytes.Contains(got, []byte("(memory)")) {
 		t.Errorf("expected section labels for differing sections, got:\n%s", got)
@@ -85,7 +85,7 @@ func TestWriteTerminalSeveritySort(t *testing.T) {
 func TestWriteTerminalSeveritySortDedupesSection(t *testing.T) {
 	advice := []pgtuner.Advice{
 		{Level: pgtuner.Bad, Section: "wal", Title: "fsync off", Message: "dangerous"},
-		{Level: pgtuner.Warn, Section: "wal", Title: "wal_level", Message: "minimal"},
+		{Level: pgtuner.Bad, Section: "wal", Title: "full_page_writes off", Message: "dangerous"},
 		{Level: pgtuner.Info, Section: "memory", Title: "work_mem", Message: "default"},
 	}
 	rep := pgtuner.NewReport("16.2", advice)
@@ -94,7 +94,7 @@ func TestWriteTerminalSeveritySortDedupesSection(t *testing.T) {
 		t.Fatalf("WriteTerminal: %v", err)
 	}
 	got := buf.String()
-	// Two consecutive wal items, but the "(wal)" label must appear exactly once.
+	// Two wal items at the same level, but the "(wal)" label must appear exactly once.
 	if n := strings.Count(got, "(wal)"); n != 1 {
 		t.Errorf("expected '(wal)' label once for consecutive same-section items, got %d:\n%s", n, got)
 	}
@@ -180,5 +180,80 @@ func TestGradeStyle(t *testing.T) {
 		if got := gradeStyle(grade)[1]; got != want {
 			t.Errorf("gradeStyle(%q) = %q, want %q", grade, got, want)
 		}
+	}
+}
+
+func TestWriteTerminalSeverityGroupsAndIgnored(t *testing.T) {
+	advice := []pgtuner.Advice{
+		{Level: pgtuner.Bad, Section: "wal", Title: "fsync off", Message: "x"},
+		{Level: pgtuner.Warn, Section: "wal", Title: "wal_level", Message: "y"},
+		{Level: pgtuner.Warn, Section: "memory", Title: "work_mem", Message: "z"},
+		{Level: pgtuner.Info, Section: "memory", Title: "huge pages", Message: "w"},
+	}
+	rep := pgtuner.NewReport("16.2", advice)
+	rep.Ignored = 3
+	var buf bytes.Buffer
+	if err := WriteTerminal(&buf, rep, false, true); err != nil {
+		t.Fatal(err)
+	}
+	got := buf.String()
+	order := []string{"=== Bad (1) ===", "=== Warn (2) ===", "=== Info (1) ==="}
+	last := -1
+	for _, h := range order {
+		i := strings.Index(got, h)
+		if i < 0 || i < last {
+			t.Fatalf("heading %q missing or out of order:\n%s", h, got)
+		}
+		last = i
+	}
+	if strings.Count(got, "(memory)") != 2 {
+		t.Errorf("a section label repeats under each level it appears in:\n%s", got)
+	}
+	if !strings.Contains(got, "(3 ignored)") {
+		t.Errorf("footer must say how many findings were ignored:\n%s", got)
+	}
+}
+
+func TestWriteDiff(t *testing.T) {
+	warn, info := pgtuner.Warn, pgtuner.Info
+	d := pgtuner.Diff{
+		OldGrade: "D", NewGrade: "B",
+		Added:    []pgtuner.Change{{ID: "io.sync", Title: "io", New: &info}},
+		Worse:    []pgtuner.Change{{ID: "memory.sb", Title: "sb", Old: &info, New: &warn}},
+		Resolved: []pgtuner.Change{{ID: "wal.fsync-off", Title: "fsync off", Old: &warn}},
+	}
+	var buf bytes.Buffer
+	if err := WriteDiff(&buf, d, false); err != nil {
+		t.Fatal(err)
+	}
+	got := buf.String()
+	for _, want := range []string{"Grade: D -> B", "New (1)", "Worse (1)", "Resolved (1)", "[info] -> [warn]  memory.sb"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("diff output missing %q:\n%s", want, got)
+		}
+	}
+	var none bytes.Buffer
+	_ = WriteDiff(&none, pgtuner.Diff{OldGrade: "A", NewGrade: "A"}, false)
+	if !strings.Contains(none.String(), "No findings changed.") {
+		t.Errorf("empty diff: %q", none.String())
+	}
+}
+
+func TestWriteTerminalShowIDs(t *testing.T) {
+	rep := pgtuner.NewReport("16.2", []pgtuner.Advice{
+		{ID: "memory.shared-buffers-low", Level: pgtuner.Warn, Section: "memory", Title: "shared_buffers low", Message: "m", Detail: "d"},
+	})
+	var with, without bytes.Buffer
+	if err := WriteTerminalOptions(&with, rep, TerminalOptions{ShowIDs: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteTerminalOptions(&without, rep, TerminalOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(with.String(), "ID:      memory.shared-buffers-low") {
+		t.Errorf("ID line missing:\n%s", with.String())
+	}
+	if strings.Contains(without.String(), "memory.shared-buffers-low") {
+		t.Errorf("the ID must stay hidden by default:\n%s", without.String())
 	}
 }

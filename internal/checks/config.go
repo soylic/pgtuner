@@ -42,6 +42,7 @@ func evalPendingRestart(names []string) []pgtuner.Advice {
 		return nil
 	}
 	return []pgtuner.Advice{{
+		ID:      "config.pending-restart",
 		Level:   pgtuner.Warn,
 		Section: configSection,
 		Title:   fmt.Sprintf("Settings changed but pending restart (%d)", len(names)),
@@ -72,6 +73,7 @@ func evalParallelism(maxWorkerProcesses, maxParallelWorkers, maxParallelPerGathe
 	// src: https://www.postgresql.org/docs/current/runtime-config-query.html#RUNTIME-CONFIG-QUERY-OTHER
 	if maxParallelPerGather == 0 && cpus > 1 {
 		out = append(out, pgtuner.Advice{
+			ID:      "config.parallel-query-disabled",
 			Level:   pgtuner.Info,
 			Section: configSection,
 			Title:   "Parallel query is disabled",
@@ -88,6 +90,7 @@ func evalParallelism(maxWorkerProcesses, maxParallelWorkers, maxParallelPerGathe
 	// src: https://www.postgresql.org/docs/current/runtime-config-resource.html
 	if cpus > 0 && float64(maxParallelWorkers) > cpus {
 		out = append(out, pgtuner.Advice{
+			ID:      "config.parallel-workers-exceed-cpus",
 			Level:   pgtuner.Info,
 			Section: configSection,
 			Title:   "max_parallel_workers exceeds available CPUs",
@@ -105,6 +108,7 @@ func evalParallelism(maxWorkerProcesses, maxParallelWorkers, maxParallelPerGathe
 	// src: https://www.postgresql.org/docs/current/runtime-config-resource.html
 	if maxWorkerProcesses > 0 && maxParallelWorkers > maxWorkerProcesses {
 		out = append(out, pgtuner.Advice{
+			ID:      "config.parallel-workers-exceed-worker-processes",
 			Level:   pgtuner.Info,
 			Section: configSection,
 			Title:   "max_parallel_workers exceeds max_worker_processes",
@@ -142,6 +146,7 @@ func evalLoggingHygiene(h logHygiene) []pgtuner.Advice {
 	// src: https://www.postgresql.org/docs/current/runtime-config-logging.html#GUC-LOG-MIN-DURATION-STATEMENT
 	if h.logMinDurationStatement == -1 {
 		out = append(out, pgtuner.Advice{
+			ID:      "config.log-min-duration-disabled",
 			Level:   pgtuner.Info,
 			Section: configSection,
 			Title:   "Slow-query logging is disabled",
@@ -156,6 +161,7 @@ func evalLoggingHygiene(h logHygiene) []pgtuner.Advice {
 	// src: https://www.postgresql.org/docs/current/runtime-config-logging.html#GUC-LOG-LOCK-WAITS
 	if !h.logLockWaits {
 		out = append(out, pgtuner.Advice{
+			ID:      "config.log-lock-waits-disabled",
 			Level:   pgtuner.Info,
 			Section: configSection,
 			Title:   "log_lock_waits is disabled",
@@ -170,6 +176,7 @@ func evalLoggingHygiene(h logHygiene) []pgtuner.Advice {
 	// src: https://www.postgresql.org/docs/current/runtime-config-logging.html#GUC-LOG-AUTOVACUUM-MIN-DURATION
 	if h.logAutovacuumMinDur == -1 {
 		out = append(out, pgtuner.Advice{
+			ID:      "config.log-autovacuum-disabled",
 			Level:   pgtuner.Info,
 			Section: configSection,
 			Title:   "Autovacuum logging is disabled",
@@ -192,6 +199,7 @@ func evalLoggingHygiene(h logHygiene) []pgtuner.Advice {
 			msg += " This is the default before PostgreSQL 15."
 		}
 		out = append(out, pgtuner.Advice{
+			ID:      "config.log-checkpoints-disabled",
 			Level:   pgtuner.Info,
 			Section: configSection,
 			Title:   "log_checkpoints is disabled",
@@ -223,6 +231,7 @@ func evalTimeouts(t timeoutSettings) []pgtuner.Advice {
 	// src: https://www.postgresql.org/docs/current/runtime-config-client.html#GUC-STATEMENT-TIMEOUT
 	if t.statementTimeout == 0 {
 		out = append(out, pgtuner.Advice{
+			ID:      "config.statement-timeout-unset",
 			Level:   pgtuner.Info,
 			Section: configSection,
 			Title:   "statement_timeout is unset (no ceiling)",
@@ -238,6 +247,7 @@ func evalTimeouts(t timeoutSettings) []pgtuner.Advice {
 	// src: https://www.postgresql.org/docs/current/runtime-config-client.html#GUC-IDLE-IN-TRANSACTION-SESSION-TIMEOUT
 	if t.idleInTxnTimeout == 0 {
 		out = append(out, pgtuner.Advice{
+			ID:      "config.idle-in-transaction-timeout-unset",
 			Level:   pgtuner.Info,
 			Section: configSection,
 			Title:   "idle_in_transaction_session_timeout is unset",
@@ -252,6 +262,7 @@ func evalTimeouts(t timeoutSettings) []pgtuner.Advice {
 	// src: https://www.postgresql.org/docs/current/runtime-config-client.html#GUC-LOCK-TIMEOUT
 	if t.lockTimeout == 0 {
 		out = append(out, pgtuner.Advice{
+			ID:      "config.lock-timeout-unset",
 			Level:   pgtuner.Info,
 			Section: configSection,
 			Title:   "lock_timeout is unset (no ceiling)",
@@ -266,6 +277,7 @@ func evalTimeouts(t timeoutSettings) []pgtuner.Advice {
 	// src: https://www.postgresql.org/docs/17/runtime-config-client.html#GUC-TRANSACTION-TIMEOUT
 	if t.transactionTimeoutSupp && t.transactionTimeout == 0 {
 		out = append(out, pgtuner.Advice{
+			ID:      "config.transaction-timeout-unset",
 			Level:   pgtuner.Info,
 			Section: configSection,
 			Title:   "transaction_timeout is unset (PG17+, no ceiling)",
@@ -301,6 +313,7 @@ func evalArchiver(a archiverStatus) []pgtuner.Advice {
 	}
 
 	return []pgtuner.Advice{{
+		ID:      "config.wal-archiving-failing",
 		Level:   pgtuner.Warn,
 		Section: configSection,
 		Title:   "WAL archiving is failing",
@@ -324,6 +337,7 @@ func evalOutdatedExtensions(descs []string) []pgtuner.Advice {
 		return nil
 	}
 	return []pgtuner.Advice{{
+		ID:      "config.extensions-outdated",
 		Level:   pgtuner.Info,
 		Section: configSection,
 		Title:   fmt.Sprintf("Extensions are not at their default version (%d)", len(descs)),
@@ -358,6 +372,7 @@ func (ConfigCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 
 	if len(out) == 0 {
 		out = append(out, pgtuner.Advice{
+			ID:      "config.depth-ok",
 			Level:   pgtuner.OK,
 			Section: configSection,
 			Title:   "Configuration depth looks healthy",
@@ -377,6 +392,7 @@ func runPendingRestart(ctx context.Context, p *Probe) []pgtuner.Advice {
 	rows, err := p.Conn.Query(ctx, sql)
 	if err != nil {
 		return []pgtuner.Advice{{
+			ID:      "config.pending-restart-query-failed",
 			Level:   pgtuner.Unknown,
 			Section: configSection,
 			Title:   "Pending-restart query failed",
@@ -391,6 +407,7 @@ func runPendingRestart(ctx context.Context, p *Probe) []pgtuner.Advice {
 		var n string
 		if err := rows.Scan(&n); err != nil {
 			return []pgtuner.Advice{{
+				ID:      "config.pending-restart-scan-failed",
 				Level:   pgtuner.Unknown,
 				Section: configSection,
 				Title:   "Pending-restart scan failed",
@@ -402,6 +419,7 @@ func runPendingRestart(ctx context.Context, p *Probe) []pgtuner.Advice {
 	}
 	if err := rows.Err(); err != nil {
 		return []pgtuner.Advice{{
+			ID:      "config.pending-restart-iteration-failed",
 			Level:   pgtuner.Unknown,
 			Section: configSection,
 			Title:   "Pending-restart iteration failed",
@@ -477,6 +495,7 @@ func runArchiver(ctx context.Context, p *Probe) []pgtuner.Advice {
 	var lastFailed, lastArchived *time.Time
 	if err := p.Conn.QueryRow(ctx, sql).Scan(&failedCount, &lastFailed, &lastArchived); err != nil {
 		return []pgtuner.Advice{{
+			ID:      "config.archiver-query-failed",
 			Level:   pgtuner.Unknown,
 			Section: configSection,
 			Title:   "Archiver-status query failed",
@@ -507,6 +526,7 @@ func runOutdatedExtensions(ctx context.Context, p *Probe) []pgtuner.Advice {
 	rows, err := p.Conn.Query(ctx, sql)
 	if err != nil {
 		return []pgtuner.Advice{{
+			ID:      "config.extensions-query-failed",
 			Level:   pgtuner.Unknown,
 			Section: configSection,
 			Title:   "Outdated-extensions query failed",
@@ -521,6 +541,7 @@ func runOutdatedExtensions(ctx context.Context, p *Probe) []pgtuner.Advice {
 		var name, installed, def string
 		if err := rows.Scan(&name, &installed, &def); err != nil {
 			return []pgtuner.Advice{{
+				ID:      "config.extensions-scan-failed",
 				Level:   pgtuner.Unknown,
 				Section: configSection,
 				Title:   "Outdated-extensions scan failed",
@@ -532,6 +553,7 @@ func runOutdatedExtensions(ctx context.Context, p *Probe) []pgtuner.Advice {
 	}
 	if err := rows.Err(); err != nil {
 		return []pgtuner.Advice{{
+			ID:      "config.extensions-iteration-failed",
 			Level:   pgtuner.Unknown,
 			Section: configSection,
 			Title:   "Outdated-extensions iteration failed",

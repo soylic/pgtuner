@@ -32,6 +32,7 @@ func evalStatistics(s *pg.Settings) []pgtuner.Advice {
 	// src: https://www.postgresql.org/docs/current/runtime-config-statistics.html#GUC-TRACK-IO-TIMING
 	if tit, ok := s.Get("track_io_timing"); ok && tit == "off" {
 		out = append(out, pgtuner.Advice{
+			ID:      "statistics.track-io-timing-off",
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "track_io_timing is disabled",
@@ -45,6 +46,7 @@ func evalStatistics(s *pg.Settings) []pgtuner.Advice {
 	// src: https://www.postgresql.org/docs/current/runtime-config-statistics.html#GUC-TRACK-COUNTS
 	if tc, ok := s.Get("track_counts"); ok && tc == "off" {
 		out = append(out, pgtuner.Advice{
+			ID:      "statistics.track-counts-off",
 			Level:   pgtuner.Bad,
 			Section: section,
 			Title:   "track_counts is disabled",
@@ -60,6 +62,7 @@ func evalStatistics(s *pg.Settings) []pgtuner.Advice {
 	if spl, ok := s.Get("shared_preload_libraries"); ok {
 		if !strings.Contains(spl, "pg_stat_statements") {
 			out = append(out, pgtuner.Advice{
+				ID:      "statistics.pg-stat-statements-not-loaded",
 				Level:   pgtuner.Info,
 				Section: section,
 				Title:   "pg_stat_statements is not loaded",
@@ -72,6 +75,7 @@ func evalStatistics(s *pg.Settings) []pgtuner.Advice {
 
 	if len(out) == 0 {
 		out = append(out, pgtuner.Advice{
+			ID:      "statistics.ok",
 			Level:   pgtuner.OK,
 			Section: section,
 			Title:   "Statistics configuration looks healthy",

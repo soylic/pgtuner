@@ -65,6 +65,7 @@ func evalIO(rows []IORow) []pgtuner.Advice {
 	// src: https://www.postgresql.org/docs/16/monitoring-stats.html#MONITORING-PG-STAT-IO-VIEW
 	if totalEvictions >= ioClientEvictionWarnThreshold {
 		out = append(out, pgtuner.Advice{
+			ID:      "io.backend-evictions",
 			Level:   pgtuner.Warn,
 			Section: section,
 			Title:   "Client backends are evicting shared buffers",
@@ -78,6 +79,7 @@ func evalIO(rows []IORow) []pgtuner.Advice {
 	// src: https://www.postgresql.org/docs/16/monitoring-stats.html#MONITORING-PG-STAT-IO-VIEW
 	if totalFsyncs >= ioClientFsyncWarnThreshold {
 		out = append(out, pgtuner.Advice{
+			ID:      "io.backend-fsyncs",
 			Level:   pgtuner.Warn,
 			Section: section,
 			Title:   "Client backends are performing fsyncs",
@@ -91,6 +93,7 @@ func evalIO(rows []IORow) []pgtuner.Advice {
 	// src: https://www.postgresql.org/docs/16/monitoring-stats.html#MONITORING-PG-STAT-IO-VIEW
 	if totalWrites >= ioClientWriteWarnThreshold {
 		out = append(out, pgtuner.Advice{
+			ID:      "io.backend-writes-high",
 			Level:   pgtuner.Warn,
 			Section: section,
 			Title:   "Client backends are writing buffers at a high rate",
@@ -111,6 +114,7 @@ func (IOCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 
 	if !p.Version.AtLeast(16, 0) {
 		return []pgtuner.Advice{{
+			ID:      "io.stat-io-unavailable",
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "pg_stat_io unavailable on this PostgreSQL version",
@@ -128,6 +132,7 @@ func (IOCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 	dbRows, err := p.Conn.Query(ctx, sql)
 	if err != nil {
 		return []pgtuner.Advice{{
+			ID:      "io.stat-io-query-failed",
 			Level:   pgtuner.Unknown,
 			Section: section,
 			Title:   "pg_stat_io query failed",
@@ -141,6 +146,7 @@ func (IOCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 		var r IORow
 		if err := dbRows.Scan(&r.BackendType, &r.Context, &r.Evictions, &r.Fsyncs, &r.Writes); err != nil {
 			return []pgtuner.Advice{{
+				ID:      "io.stat-io-scan-failed",
 				Level:   pgtuner.Unknown,
 				Section: section,
 				Title:   "pg_stat_io scan failed",
@@ -151,6 +157,7 @@ func (IOCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 	}
 	if err := dbRows.Err(); err != nil {
 		return []pgtuner.Advice{{
+			ID:      "io.stat-io-iteration-failed",
 			Level:   pgtuner.Unknown,
 			Section: section,
 			Title:   "pg_stat_io iteration failed",
@@ -168,6 +175,7 @@ func (IOCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 
 	if len(out) == 0 {
 		out = append(out, pgtuner.Advice{
+			ID:      "io.load-ok",
 			Level:   pgtuner.OK,
 			Section: section,
 			Title:   "I/O load looks healthy",
@@ -204,6 +212,7 @@ func evalIOMethodPG18(s *pg.Settings) []pgtuner.Advice {
 	case method == "sync":
 		// 'sync' may reduce write throughput.
 		out = append(out, pgtuner.Advice{
+			ID:      "io.async-disabled-pg18",
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "Async I/O is disabled (io_method=sync, PG18+)",
@@ -214,6 +223,7 @@ func evalIOMethodPG18(s *pg.Settings) []pgtuner.Advice {
 	case method == "io_uring":
 		// Valid on kernels with full io_uring support (Linux ≥5.1, preferably ≥5.10).
 		out = append(out, pgtuner.Advice{
+			ID:      "io.uring-active-pg18",
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "io_uring async I/O backend is active (PG18+)",
@@ -224,6 +234,7 @@ func evalIOMethodPG18(s *pg.Settings) []pgtuner.Advice {
 	default:
 		// Unknown future value.
 		out = append(out, pgtuner.Advice{
+			ID:      "io.method-unrecognised-pg18",
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "Unrecognised io_method value (PG18+)",
@@ -237,6 +248,7 @@ func evalIOMethodPG18(s *pg.Settings) []pgtuner.Advice {
 	if method == defaultIOMethod || method == "" {
 		if workers, ok := s.Int("io_workers"); ok && workers != defaultIOWorkers {
 			out = append(out, pgtuner.Advice{
+				ID:      "io.workers-non-default-pg18",
 				Level:   pgtuner.Info,
 				Section: section,
 				Title:   "io_workers is set to a non-default value (PG18+)",

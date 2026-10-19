@@ -66,6 +66,10 @@ func (l *Level) UnmarshalJSON(b []byte) error {
 
 // Advice is one finding from one check.
 type Advice struct {
+	// ID names the condition that produced the finding, as <check>.<condition>.
+	// It does not change when the wording or the numbers change, so scripts
+	// can match on it. Examples: connection.ssl-disabled, wal.fsync-off.
+	ID      string `json:"id"`
 	Level   Level  `json:"level"`
 	Section string `json:"section"`
 	Title   string `json:"title"`

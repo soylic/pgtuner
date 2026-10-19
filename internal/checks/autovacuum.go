@@ -55,6 +55,7 @@ func evalDeadTuples(rows []DeadTupleRow, baseThreshold float64, scaleFactor floa
 	}
 
 	return []pgtuner.Advice{{
+		ID:      "autovacuum.dead-tuples-overdue",
 		Level:   pgtuner.Warn,
 		Section: section,
 		Title:   "Tables with excessive dead tuples (vacuum overdue)",
@@ -80,6 +81,7 @@ func evalWraparound(age, maxAge int64) *pgtuner.Advice {
 	switch {
 	case pct > 0.80:
 		a := pgtuner.Advice{
+			ID:      "autovacuum.wraparound-critical",
 			Level:   pgtuner.Bad,
 			Section: section,
 			Title:   "Transaction-ID wraparound risk is critical",
@@ -90,6 +92,7 @@ func evalWraparound(age, maxAge int64) *pgtuner.Advice {
 		return &a
 	case pct > 0.50:
 		a := pgtuner.Advice{
+			ID:      "autovacuum.wraparound-elevated",
 			Level:   pgtuner.Warn,
 			Section: section,
 			Title:   "Transaction-ID wraparound age is elevated",
@@ -111,6 +114,7 @@ func evalWorkersCPU(section string, workers int, cpus float64) []pgtuner.Advice 
 		return nil
 	}
 	return []pgtuner.Advice{{
+		ID:      "autovacuum.max-workers-exceeds-cpus",
 		Level:   pgtuner.Info,
 		Section: section,
 		Title:   "autovacuum_max_workers exceeds available CPUs",
@@ -137,6 +141,7 @@ func (AutovacuumSettingsCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advi
 	// src: https://www.postgresql.org/docs/current/runtime-config-autovacuum.html#GUC-AUTOVACUUM
 	if av, ok := p.Settings.Get("autovacuum"); ok && av == "off" {
 		out = append(out, pgtuner.Advice{
+			ID:      "autovacuum_settings.autovacuum-disabled",
 			Level:   pgtuner.Bad,
 			Section: section,
 			Title:   "autovacuum is disabled: bloat and wraparound risk",
@@ -150,6 +155,7 @@ func (AutovacuumSettingsCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advi
 	// src: https://www.postgresql.org/docs/current/runtime-config-autovacuum.html#GUC-AUTOVACUUM-MAX-WORKERS
 	if mw, ok := p.Settings.Int("autovacuum_max_workers"); ok && mw < 3 {
 		out = append(out, pgtuner.Advice{
+			ID:      "autovacuum_settings.max-workers-below-default",
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "autovacuum_max_workers is below the default",
@@ -164,6 +170,7 @@ func (AutovacuumSettingsCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advi
 	if p.Version.AtLeast(18, 0) {
 		if _, ok := p.Settings.Get("autovacuum_worker_slots"); ok {
 			out = append(out, pgtuner.Advice{
+				ID:      "autovacuum_settings.worker-slots-pg18",
 				Level:   pgtuner.Info,
 				Section: section,
 				Title:   "autovacuum_worker_slots available (PG18+)",
@@ -181,6 +188,7 @@ func (AutovacuumSettingsCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advi
 			fma, _ := p.Settings.Int("autovacuum_freeze_max_age")
 			if fma > 0 && vfa < fma {
 				out = append(out, pgtuner.Advice{
+					ID:      "autovacuum_settings.failsafe-age-below-freeze-max-age",
 					Level:   pgtuner.Info,
 					Section: section,
 					Title:   "vacuum_failsafe_age is below autovacuum_freeze_max_age",
@@ -203,6 +211,7 @@ func (AutovacuumSettingsCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advi
 
 	if len(out) == 0 {
 		out = append(out, pgtuner.Advice{
+			ID:      "autovacuum_settings.settings-ok",
 			Level:   pgtuner.OK,
 			Section: section,
 			Title:   "Autovacuum settings look healthy",
@@ -248,6 +257,7 @@ func (AutovacuumCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 	deadRows, err := p.Conn.Query(ctx, deadSQL, deadTupleQueryLimit)
 	if err != nil {
 		out = append(out, pgtuner.Advice{
+			ID:      "autovacuum.dead-tuples-query-failed",
 			Level:   pgtuner.Unknown,
 			Section: section,
 			Title:   "Dead-tuple stats unavailable",
@@ -261,6 +271,7 @@ func (AutovacuumCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 				var r DeadTupleRow
 				if err := deadRows.Scan(&r.SchemaName, &r.RelName, &r.DeadTuples, &r.LiveTuples); err != nil {
 					out = append(out, pgtuner.Advice{
+						ID:      "autovacuum.dead-tuples-scan-failed",
 						Level:   pgtuner.Unknown,
 						Section: section,
 						Title:   "Dead-tuple stats scan failed",
@@ -272,6 +283,7 @@ func (AutovacuumCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 			}
 			if err := deadRows.Err(); err != nil {
 				out = append(out, pgtuner.Advice{
+					ID:      "autovacuum.dead-tuples-iteration-failed",
 					Level:   pgtuner.Unknown,
 					Section: section,
 					Title:   "Dead-tuple stats iteration failed",
@@ -296,6 +308,7 @@ func (AutovacuumCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 	var xidAge int64
 	if err := p.Conn.QueryRow(ctx, wraparoundSQL).Scan(&datname, &xidAge); err != nil {
 		out = append(out, pgtuner.Advice{
+			ID:      "autovacuum.wraparound-query-failed",
 			Level:   pgtuner.Unknown,
 			Section: section,
 			Title:   "Wraparound age unavailable",
@@ -307,6 +320,7 @@ func (AutovacuumCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 
 	if len(out) == 0 {
 		out = append(out, pgtuner.Advice{
+			ID:      "autovacuum.keeping-up-ok",
 			Level:   pgtuner.OK,
 			Section: section,
 			Title:   "Autovacuum is keeping up",

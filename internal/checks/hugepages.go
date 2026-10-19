@@ -24,6 +24,7 @@ func (HugePagesCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 	// src: https://www.postgresql.org/docs/current/runtime-config-resource.html#GUC-HUGE-PAGES
 	if hp, ok := p.Settings.Get("huge_pages"); ok && hp == "try" {
 		out = append(out, pgtuner.Advice{
+			ID:      "hugepages.try-may-disable",
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "huge_pages=try may silently disable huge pages",
@@ -40,6 +41,7 @@ func (HugePagesCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 		switch env.Kind {
 		case osinspect.EnvDocker, osinspect.EnvKubernetes, osinspect.EnvLXC:
 			out = append(out, pgtuner.Advice{
+				ID:      "hugepages.host-global-container",
 				Level:   pgtuner.Info,
 				Section: section,
 				Title:   "vm.nr_hugepages is host-global: configure on the host/node",
@@ -53,6 +55,7 @@ func (HugePagesCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 	mem, err := p.OS.Memory()
 	if err == osinspect.ErrNoOSFacts {
 		out = append(out, pgtuner.Advice{
+			ID:      "hugepages.host-access-required",
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "Cannot verify huge pages without host access",
@@ -65,6 +68,7 @@ func (HugePagesCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 	if mem.HugePageSize == 0 {
 		if len(out) == 0 {
 			out = append(out, pgtuner.Advice{
+				ID:      "hugepages.not-in-use-ok",
 				Level:   pgtuner.OK,
 				Section: section,
 				Title:   "Huge pages not in use",
@@ -99,6 +103,7 @@ func (HugePagesCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 
 	if neededPages > 0 && int64(mem.HugePagesTotal) < neededPages {
 		out = append(out, pgtuner.Advice{
+			ID:      "hugepages.insufficient",
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "Insufficient huge pages configured",
@@ -108,6 +113,7 @@ func (HugePagesCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 		})
 	} else if neededPages > 0 {
 		out = append(out, pgtuner.Advice{
+			ID:      "hugepages.adequate-ok",
 			Level:   pgtuner.OK,
 			Section: section,
 			Title:   "Huge pages look adequate",
@@ -118,6 +124,7 @@ func (HugePagesCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 
 	if len(out) == 0 {
 		out = append(out, pgtuner.Advice{
+			ID:      "hugepages.settings-ok",
 			Level:   pgtuner.OK,
 			Section: section,
 			Title:   "Huge pages configuration looks healthy",

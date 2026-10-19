@@ -20,6 +20,8 @@ type Probe struct {
 	Role     pg.Role   // replication role; best-effort, never nil
 	Topology pgtuner.Topology
 	Flavor   pgtuner.Flavor
+	// PatroniError is set when -patroni-url was given and the API did not answer as Patroni.
+	PatroniError string
 }
 
 // now returns the fixed Now for deterministic tests, or the wall clock when zero.

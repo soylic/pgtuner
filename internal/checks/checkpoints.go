@@ -50,6 +50,7 @@ func evalCheckpoints(timed, requested int64, completionTarget float64) []pgtuner
 
 	if total == 0 {
 		out = append(out, pgtuner.Advice{
+			ID:      "checkpoints.no-activity",
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "No checkpoint activity recorded yet",
@@ -60,6 +61,7 @@ func evalCheckpoints(timed, requested int64, completionTarget float64) []pgtuner
 		ratio := float64(requested) / float64(total)
 		if ratio > checkpointReqRatioWarnThreshold {
 			out = append(out, pgtuner.Advice{
+				ID:      "checkpoints.requested-too-frequent",
 				Level:   pgtuner.Warn,
 				Section: section,
 				Title:   "Too many requested checkpoints",
@@ -74,6 +76,7 @@ func evalCheckpoints(timed, requested int64, completionTarget float64) []pgtuner
 	// src: https://www.postgresql.org/docs/current/runtime-config-wal.html#GUC-CHECKPOINT-COMPLETION-TARGET
 	if completionTarget < checkpointCompletionTargetDefault {
 		out = append(out, pgtuner.Advice{
+			ID:      "checkpoints.completion-target-low",
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "checkpoint_completion_target is below recommended value",
@@ -85,6 +88,7 @@ func evalCheckpoints(timed, requested int64, completionTarget float64) []pgtuner
 
 	if len(out) == 0 {
 		out = append(out, pgtuner.Advice{
+			ID:      "checkpoints.settings-ok",
 			Level:   pgtuner.OK,
 			Section: section,
 			Title:   "Checkpoint configuration looks healthy",
@@ -105,6 +109,7 @@ func (CheckpointsCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 	var timed, requested int64
 	if err := p.Conn.QueryRow(ctx, sql).Scan(&timed, &requested); err != nil {
 		return []pgtuner.Advice{{
+			ID:      "checkpoints.stats-query-failed",
 			Level:   pgtuner.Unknown,
 			Section: section,
 			Title:   "Checkpoint stats unavailable",

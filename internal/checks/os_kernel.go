@@ -35,6 +35,7 @@ func evalKernel(thp string, overcommit string, swappiness string) []pgtuner.Advi
 	switch thp {
 	case "always":
 		out = append(out, pgtuner.Advice{
+			ID:      "os_kernel.thp-always",
 			Level:   pgtuner.Warn,
 			Section: section,
 			Title:   "Transparent Huge Pages set to 'always'",
@@ -51,6 +52,7 @@ func evalKernel(thp string, overcommit string, swappiness string) []pgtuner.Advi
 	// src: https://www.postgresql.org/docs/current/kernel-resources.html#LINUX-MEMORY-OVERCOMMIT
 	if overcommit != "" && overcommit != "2" {
 		out = append(out, pgtuner.Advice{
+			ID:      "os_kernel.overcommit-not-strict",
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "vm.overcommit_memory is not set to 2",
@@ -65,6 +67,7 @@ func evalKernel(thp string, overcommit string, swappiness string) []pgtuner.Advi
 	if swappiness != "" {
 		if v, err := strconv.Atoi(swappiness); err == nil && v > swappinessHighThreshold {
 			out = append(out, pgtuner.Advice{
+				ID:      "os_kernel.swappiness-high",
 				Level:   pgtuner.Info,
 				Section: section,
 				Title:   "vm.swappiness is high",
@@ -93,6 +96,7 @@ func (KernelCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 	_, envErr := p.OS.Environment()
 	if envErr == osinspect.ErrNoOSFacts {
 		return []pgtuner.Advice{{
+			ID:      "os_kernel.inspector-unavailable",
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "Kernel checks require running on the DB host",
@@ -109,6 +113,7 @@ func (KernelCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 
 	if len(out) == 0 {
 		out = append(out, pgtuner.Advice{
+			ID:      "os_kernel.kernel-ok",
 			Level:   pgtuner.OK,
 			Section: section,
 			Title:   "Kernel parameters look healthy",

@@ -47,6 +47,7 @@ func evalTempFiles(tempFiles, tempBytes int64) []pgtuner.Advice {
 	// Require both a nonzero count and significant bytes. One tiny temp file is not a problem.
 	if tempFiles > 0 && tempBytes > tempFileSizeWarnThreshold {
 		return []pgtuner.Advice{{
+			ID:      "storage.temp-files-spilling",
 			Level:   pgtuner.Warn,
 			Section: section,
 			Title:   "Queries are spilling to temp files",
@@ -70,6 +71,7 @@ func evalStorageSettings(s *pg.Settings, v pg.ServerVersion) []pgtuner.Advice {
 	if dc, ok := s.Get("data_checksums"); ok && dc == "off" {
 		if v.AtLeast(18, 0) {
 			out = append(out, pgtuner.Advice{
+				ID:      "storage_settings.data-checksums-off-pg18",
 				Level:   pgtuner.Warn,
 				Section: section,
 				Title:   "Data checksums are disabled",
@@ -79,6 +81,7 @@ func evalStorageSettings(s *pg.Settings, v pg.ServerVersion) []pgtuner.Advice {
 			})
 		} else {
 			out = append(out, pgtuner.Advice{
+				ID:      "storage_settings.data-checksums-off",
 				Level:   pgtuner.Info,
 				Section: section,
 				Title:   "Data checksums are disabled",
@@ -94,6 +97,7 @@ func evalStorageSettings(s *pg.Settings, v pg.ServerVersion) []pgtuner.Advice {
 	if v.AtLeast(14, 0) {
 		if dtc, ok := s.Get("default_toast_compression"); ok && dtc == "pglz" {
 			out = append(out, pgtuner.Advice{
+				ID:      "storage_settings.toast-compression-pglz",
 				Level:   pgtuner.Info,
 				Section: section,
 				Title:   "Consider lz4 for TOAST compression",
@@ -107,6 +111,7 @@ func evalStorageSettings(s *pg.Settings, v pg.ServerVersion) []pgtuner.Advice {
 	// src: https://www.postgresql.org/docs/current/runtime-config-logging.html#GUC-LOG-TEMP-FILES
 	if ltf, ok := s.Int("log_temp_files"); ok && ltf == -1 {
 		out = append(out, pgtuner.Advice{
+			ID:      "storage_settings.log-temp-files-off",
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "log_temp_files is disabled",
@@ -126,6 +131,7 @@ func (StorageSettingsCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice 
 
 	if len(out) == 0 {
 		out = append(out, pgtuner.Advice{
+			ID:      "storage_settings.ok",
 			Level:   pgtuner.OK,
 			Section: section,
 			Title:   "Storage settings look healthy",
@@ -147,6 +153,7 @@ func (StorageCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 	var tempFiles, tempBytes int64
 	if err := p.Conn.QueryRow(ctx, tempSQL).Scan(&tempFiles, &tempBytes); err != nil {
 		out = append(out, pgtuner.Advice{
+			ID:      "storage.temp-files-query-failed",
 			Level:   pgtuner.Unknown,
 			Section: section,
 			Title:   "Temp-file stats unavailable",
@@ -158,6 +165,7 @@ func (StorageCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 
 	if len(out) == 0 {
 		out = append(out, pgtuner.Advice{
+			ID:      "storage.ok",
 			Level:   pgtuner.OK,
 			Section: section,
 			Title:   "Temp-file usage looks healthy",

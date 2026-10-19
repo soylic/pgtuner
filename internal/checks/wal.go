@@ -26,6 +26,7 @@ func (WALCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 	// src: https://www.postgresql.org/docs/current/runtime-config-wal.html#GUC-FSYNC
 	if !p.Settings.Bool("fsync") {
 		out = append(out, pgtuner.Advice{
+			ID:      "wal.fsync-off",
 			Level:   pgtuner.Bad,
 			Section: section,
 			Title:   "fsync is disabled. A crash can corrupt the cluster.",
@@ -38,6 +39,7 @@ func (WALCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 	// src: https://www.postgresql.org/docs/current/runtime-config-wal.html#GUC-FULL-PAGE-WRITES
 	if !p.Settings.Bool("full_page_writes") {
 		out = append(out, pgtuner.Advice{
+			ID:      "wal.full-page-writes-off",
 			Level:   pgtuner.Bad,
 			Section: section,
 			Title:   "full_page_writes disabled",
@@ -51,6 +53,7 @@ func (WALCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 	// src: https://www.postgresql.org/docs/current/runtime-config-wal.html#GUC-SYNCHRONOUS-COMMIT
 	if sc, ok := p.Settings.Get("synchronous_commit"); ok && sc == "off" {
 		out = append(out, pgtuner.Advice{
+			ID:      "wal.synchronous-commit-off",
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "synchronous_commit=off trades durability for throughput",
@@ -80,6 +83,7 @@ func (WALCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 			docRef = docWALRuntime
 		}
 		out = append(out, pgtuner.Advice{
+			ID:      "wal.compression-off",
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "WAL compression is disabled",
@@ -93,6 +97,7 @@ func (WALCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 	// src: https://www.postgresql.org/docs/current/runtime-config-wal.html#GUC-WAL-LEVEL
 	if wl, ok := p.Settings.Get("wal_level"); ok && wl == "minimal" {
 		out = append(out, pgtuner.Advice{
+			ID:      "wal.level-minimal",
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "wal_level=minimal prevents replication and PITR",
@@ -104,6 +109,7 @@ func (WALCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 
 	if len(out) == 0 {
 		out = append(out, pgtuner.Advice{
+			ID:      "wal.ok",
 			Level:   pgtuner.OK,
 			Section: section,
 			Title:   "WAL settings look healthy",

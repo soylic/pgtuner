@@ -8,7 +8,7 @@ type Topology struct {
 	Role string `json:"role"`
 	// SystemID is pg_control_system().system_identifier. Nodes of one cluster share it.
 	SystemID string `json:"system_identifier,omitempty"`
-	// Timeline is the timeline of the last checkpoint. It increases on each promotion.
+	// Timeline is the current timeline. It increases on each promotion. A standby reports the one its WAL receiver follows.
 	Timeline int `json:"timeline,omitempty"`
 	// ClusterName is the cluster_name setting. Failover managers often set it.
 	ClusterName string `json:"cluster_name,omitempty"`

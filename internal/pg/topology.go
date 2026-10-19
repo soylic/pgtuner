@@ -42,6 +42,11 @@ func DetectTopology(ctx context.Context, c *Conn, role Role, s *Settings) pgtune
 	t.Downstream = queryDownstream(ctx, c)
 	if role.InRecovery {
 		t.Upstream, t.NodeName = queryUpstream(ctx, c, s)
+		// A standby checkpoints late, so its control file can lag a promotion. The WAL receiver knows the live timeline.
+		var rtli int
+		if err := c.QueryRow(ctx, "SELECT coalesce(received_tli, 0) FROM pg_stat_wal_receiver LIMIT 1").Scan(&rtli); err == nil && rtli > t.Timeline {
+			t.Timeline = rtli
+		}
 	}
 
 	switch role.Role {

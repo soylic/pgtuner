@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -12,13 +13,9 @@ func TestRunVersion(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code: got %d want 0 (stderr: %s)", code, stderr.String())
 	}
-	// -version must print the current value of version, which is never empty.
-	if version == "" {
-		t.Fatal("version must not be empty")
-	}
 	got := strings.TrimSpace(stdout.String())
-	if got != version {
-		t.Errorf("version output: got %q want %q", got, version)
+	if !strings.HasPrefix(got, "pgtuner ") || !strings.Contains(got, runtime.GOOS+"/"+runtime.GOARCH) {
+		t.Errorf("version output: got %q", got)
 	}
 	if stderr.Len() != 0 {
 		t.Errorf("unexpected stderr: %q", stderr.String())

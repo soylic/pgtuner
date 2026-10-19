@@ -16,6 +16,14 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Check the tag is a semantic version
+        run: |
+          semver='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+          if ! [[ "${GITHUB_REF_NAME}" =~ $semver ]]; then
+            echo "::error::${GITHUB_REF_NAME} is not a semantic version such as v1.2.3 or v1.2.3-rc.1"
+            exit 1
+          fi
+
       - name: Build binaries
         run: |
           set -euo pipefail
@@ -52,4 +60,7 @@ jobs:
         run: |
           set -euo pipefail
           ( cd dist && sha256sum * > SHA256SUMS )
-          gh release create "${GITHUB_REF_NAME}" dist/* --generate-notes --title "pgtuner ${GITHUB_REF_NAME}"
+          flags=()
+          # A version with a hyphen, such as v1.2.3-rc.1, is a prerelease.
+          [[ "${GITHUB_REF_NAME}" == *-* ]] && flags+=(--prerelease)
+          gh release create "${GITHUB_REF_NAME}" dist/* --generate-notes --title "pgtuner ${GITHUB_REF_NAME}" "${flags[@]}"

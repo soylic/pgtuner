@@ -15,7 +15,8 @@ import (
 	"github.com/soylic/pgtuner/pkg/tuner"
 )
 
-// version defaults to "dev". The release build sets it with -ldflags "-X main.version=<tag>".
+// version defaults to "dev". The release build sets it with -ldflags "-X main.version=<semver>".
+// Read it through resolveVersion, which also covers "go install pkg@v1.2.3".
 var version = "dev"
 
 func main() {
@@ -24,6 +25,8 @@ func main() {
 
 // run is the testable entry point. args excludes the program name.
 func run(args []string, stdout, stderr io.Writer) int {
+	info := readBuildInfo()
+	ver := resolveVersion(version, info)
 	fs := flag.NewFlagSet("pgtuner", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 
@@ -45,7 +48,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	if *showVersion {
-		fmt.Fprintln(stdout, version)
+		fmt.Fprintln(stdout, describeVersion(ver, info))
 		return 0
 	}
 
@@ -123,7 +126,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 				color = report.ColorEnabled(f)
 			}
 		}
-		if err := report.WriteTerminalOptions(stdout, rep, report.TerminalOptions{Color: color, SeveritySort: *sortBy == "severity", Version: version}); err != nil {
+		if err := report.WriteTerminalOptions(stdout, rep, report.TerminalOptions{Color: color, SeveritySort: *sortBy == "severity", Version: ver}); err != nil {
 			fmt.Fprintf(stderr, "pgtuner: write terminal: %v\n", err)
 			return 2
 		}

@@ -316,6 +316,25 @@ PGTUNER_TEST_DSN='postgres://pgtuner:pgtuner@localhost:55432/pgtuner' \
 It checks that the JSON is valid and that no advice is `unknown`. It needs Docker
 and Python 3.
 
-To make a release, push a tag such as `v0.1.0`. The release workflow builds
-binaries for Linux, macOS and Windows, plus `.deb` and `.rpm` packages, and
-publishes them with a `SHA256SUMS` file.
+## Versions
+
+pgtuner follows [Semantic Versioning](https://semver.org). The public surface is
+the command-line flags, the exit codes, the JSON and CSV fields, and the Go API
+in `pkg/`. Before 1.0.0, a minor release may change any of them.
+
+`pgtuner -version` prints the version, the commit, the Go version and the
+platform:
+
+```
+pgtuner 0.1.0 (commit d096a29, go1.27.2, linux/amd64)
+```
+
+A build from a checkout, or from an untagged commit, prints `dev`.
+`go install github.com/soylic/pgtuner/cmd/pgtuner@v0.1.0` prints the module
+version.
+
+To make a release, push a tag such as `v1.2.3`. The release workflow refuses a
+tag that is not a semantic version. It builds binaries for Linux, macOS and
+Windows, plus `.deb` and `.rpm` packages, and publishes them with a
+`SHA256SUMS` file. A tag with a hyphen, such as `v1.2.3-rc.1`, becomes a
+prerelease, and the packages order it before `1.2.3` (`1.2.3~rc.1`).

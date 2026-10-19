@@ -5,62 +5,49 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/OpenRemedy/pgtuner/internal/pg"
-	"github.com/OpenRemedy/pgtuner/pkg/pgtuner"
+	"github.com/soylic/pgtuner/internal/pg"
+	"github.com/soylic/pgtuner/pkg/pgtuner"
 )
 
-// docReplicationSlots is the canonical reference for pg_replication_slots.
 // src: https://www.postgresql.org/docs/current/view-pg-replication-slots.html
 const docReplicationSlots = "https://www.postgresql.org/docs/current/view-pg-replication-slots.html"
 
-// docWALSenders is the canonical reference for max_wal_senders.
 // src: https://www.postgresql.org/docs/current/runtime-config-replication.html#GUC-MAX-WAL-SENDERS
 const docWALSenders = "https://www.postgresql.org/docs/current/runtime-config-replication.html#GUC-MAX-WAL-SENDERS"
 
-// docStatReplicationSlots is the reference for pg_stat_replication_slots (PG14+).
+// docStatReplicationSlots documents pg_stat_replication_slots (PG14+).
 // src: https://www.postgresql.org/docs/14/monitoring-stats.html#MONITORING-PG-STAT-REPLICATION-SLOTS-VIEW
 const docStatReplicationSlots = "https://www.postgresql.org/docs/14/monitoring-stats.html#MONITORING-PG-STAT-REPLICATION-SLOTS-VIEW"
 
-// docHotStandby is the reference for hot standby configuration.
 // src: https://www.postgresql.org/docs/current/hot-standby.html
 const docHotStandby = "https://www.postgresql.org/docs/current/hot-standby.html"
 
-// docRuntimeReplication is the reference for runtime replication GUCs.
 // src: https://www.postgresql.org/docs/current/runtime-config-replication.html
 const docRuntimeReplication = "https://www.postgresql.org/docs/current/runtime-config-replication.html"
 
-// docStatReplication is the reference for pg_stat_replication.
 // src: https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STAT-REPLICATION-VIEW
 const docStatReplication = "https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STAT-REPLICATION-VIEW"
 
-// docWalReceiver is the reference for pg_stat_wal_receiver.
 // src: https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STAT-WAL-RECEIVER-VIEW
 const docWalReceiver = "https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STAT-WAL-RECEIVER-VIEW"
 
-// docLogicalReplication is the reference for logical replication.
 // src: https://www.postgresql.org/docs/current/logical-replication.html
 const docLogicalReplication = "https://www.postgresql.org/docs/current/logical-replication.html"
 
-// docRuntimeWAL is the reference for wal_level GUC.
 // src: https://www.postgresql.org/docs/current/runtime-config-wal.html#GUC-WAL-LEVEL
 const docRuntimeWAL = "https://www.postgresql.org/docs/current/runtime-config-wal.html#GUC-WAL-LEVEL"
 
-// replicationSlotSpillWarnThreshold is the minimum spill_bytes per slot that
-// triggers an Info notice. A slot spilling to disk means its consumer is lagging
-// significantly behind the WAL sender, causing on-disk WAL accumulation. We use
-// 1 GiB as a non-trivial threshold to avoid noise on briefly slow consumers.
+// replicationSlotSpillWarnThreshold is the minimum spill_bytes per slot that triggers an Info.
+// Spilling means the consumer lags the WAL sender. 1 GiB avoids noise from briefly slow consumers.
 // src: https://www.postgresql.org/docs/14/monitoring-stats.html#MONITORING-PG-STAT-REPLICATION-SLOTS-VIEW
 const replicationSlotSpillWarnThreshold int64 = 1 * 1024 * 1024 * 1024 // 1 GiB
 
-// replicationLagWarnThreshold is the replay-lag duration in seconds above which
-// a standby is considered significantly behind. 30 seconds is a conservative
-// threshold; shorter lags are normal burst behaviour.
+// replicationLagWarnSeconds is the replay lag above which a standby is far behind.
+// Shorter lags are normal burst behaviour.
 // src: https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STAT-REPLICATION-VIEW
 const replicationLagWarnSeconds = 30.0
 
-// evalInactiveSlots is the pure decision function for inactive replication slot
-// advice. Inactive slots retain WAL segments indefinitely, potentially filling
-// the disk.
+// evalInactiveSlots returns advice for inactive slots, which retain WAL indefinitely.
 // src: https://www.postgresql.org/docs/current/view-pg-replication-slots.html
 func evalInactiveSlots(names []string) *pgtuner.Advice {
 	if len(names) == 0 {
@@ -70,15 +57,14 @@ func evalInactiveSlots(names []string) *pgtuner.Advice {
 		Level:   pgtuner.Warn,
 		Section: "Replication",
 		Title:   "Inactive replication slot(s) retain WAL and can fill the disk",
-		Message: fmt.Sprintf("pg_replication_slots shows %d inactive slot(s): %s. An inactive slot causes PostgreSQL to retain all WAL segments produced since the slot was last consumed, potentially filling the disk.", len(names), strings.Join(names, ", ")),
-		Detail:  "Drop unused slots with SELECT pg_drop_replication_slot('<name>'), or resume the consumer. Monitor pg_replication_slots.confirmed_flush_lsn lag.",
+		Message: fmt.Sprintf("pg_replication_slots shows %d inactive slot(s): %s. PostgreSQL retains all WAL segments produced since an inactive slot was last consumed. This can fill the disk.", len(names), strings.Join(names, ", ")),
+		Detail:  "Drop unused slots with SELECT pg_drop_replication_slot('<name>'). Alternatively, resume the consumer. Monitor the pg_replication_slots.confirmed_flush_lsn lag.",
 		DocRef:  docReplicationSlots,
 	}
 	return &a
 }
 
-// evalRoleInfo produces the Info advice announcing the detected server role.
-// It is a pure function taking a pg.Role value.
+// evalRoleInfo returns the Info advice for the detected server role.
 // src: https://www.postgresql.org/docs/current/functions-admin.html (pg_is_in_recovery)
 // src: https://www.postgresql.org/docs/current/monitoring-stats.html (pg_stat_replication)
 func evalRoleInfo(r pg.Role) pgtuner.Advice {
@@ -89,7 +75,7 @@ func evalRoleInfo(r pg.Role) pgtuner.Advice {
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "This server is a PRIMARY",
-			Message: fmt.Sprintf("pg_is_in_recovery() returned false and pg_stat_replication shows %d connected standby(s). This server is the replication source.", r.ConnectedStandbys),
+			Message: fmt.Sprintf("pg_is_in_recovery() returned false. pg_stat_replication shows %d connected standby(s). This server is the replication source.", r.ConnectedStandbys),
 			DocRef:  docStatReplication,
 		}
 	case pg.RoleStandby:
@@ -97,7 +83,7 @@ func evalRoleInfo(r pg.Role) pgtuner.Advice {
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "This server is a STANDBY (in recovery)",
-			Message: "pg_is_in_recovery() returned true. This server is a streaming or archive-recovery standby.",
+			Message: "pg_is_in_recovery() returned true. This server is a streaming standby or an archive-recovery standby.",
 			DocRef:  docHotStandby,
 		}
 	case pg.RoleStandalone:
@@ -105,7 +91,7 @@ func evalRoleInfo(r pg.Role) pgtuner.Advice {
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "This server is standalone (no replication)",
-			Message: "pg_is_in_recovery() returned false and pg_stat_replication shows 0 connected standbys. Replication is not currently in use.",
+			Message: "pg_is_in_recovery() returned false. pg_stat_replication shows 0 connected standbys. Replication is not in use now.",
 			DocRef:  docWALSenders,
 		}
 	default:
@@ -113,21 +99,17 @@ func evalRoleInfo(r pg.Role) pgtuner.Advice {
 			Level:   pgtuner.Unknown,
 			Section: section,
 			Title:   "Replication role could not be determined",
-			Message: "DetectRole failed; replication-role advice is unavailable.",
+			Message: "DetectRole failed. Replication-role advice is not available.",
 		}
 	}
 }
 
-// maxStandbyDelayHighThresholdMs is the max_standby_streaming_delay (and
-// max_standby_archive_delay) value in milliseconds above which we consider the
-// delay "very high" and warn about bloat risk on the primary.  5 minutes is a
-// generous upper bound; most installations use ≤ 30 s.
+// maxStandbyDelayHighThresholdMs is the max_standby_streaming_delay (and max_standby_archive_delay) above which the delay is "very high".
+// 5 minutes is a generous bound. Most installations use 30 s or less.
 // src: https://www.postgresql.org/docs/current/runtime-config-replication.html
-const maxStandbyDelayHighThresholdMs int64 = 300_000 // 5 minutes in ms
+const maxStandbyDelayHighThresholdMs int64 = 300_000
 
-// evalStandbyArchiveDelay is the pure decision function for
-// max_standby_archive_delay standby checks.  A delay of 0 means immediate
-// cancellation; -1 or > threshold means "wait too long".
+// evalStandbyArchiveDelay returns advice for max_standby_archive_delay. A delay of 0 cancels conflicting queries immediately.
 // src: https://www.postgresql.org/docs/current/runtime-config-replication.html#GUC-MAX-STANDBY-ARCHIVE-DELAY
 // src: https://www.postgresql.org/docs/current/hot-standby.html
 func evalStandbyArchiveDelay(rawVal string) []pgtuner.Advice {
@@ -137,17 +119,15 @@ func evalStandbyArchiveDelay(rawVal string) []pgtuner.Advice {
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "max_standby_archive_delay=0: queries cancelled immediately during archive recovery conflicts",
-			Message: "max_standby_archive_delay=0 means that any query on this standby conflicting with WAL application from the archive is cancelled immediately, without any grace period. This maximises replay throughput at the cost of query reliability.",
-			Detail:  "Consider setting max_standby_archive_delay to a positive value (e.g. '30s') to allow running queries a chance to complete before being cancelled.",
+			Message: "max_standby_archive_delay=0 means the standby cancels immediately any query that conflicts with WAL application from the archive. There is no grace period. This gives the highest replay throughput but lowers query reliability.",
+			Detail:  "Consider a positive max_standby_archive_delay (for example '30s'). Running queries then have time to complete before the standby cancels them.",
 			DocRef:  docRuntimeReplication,
 		}}
 	}
 	return nil
 }
 
-// evalStandbyStreamingDelay is the pure decision function for
-// max_standby_streaming_delay standby checks.  A delay of -1 or > threshold
-// means "wait too long", causing primary bloat.
+// evalStandbyStreamingDelayHigh returns advice when max_standby_streaming_delay is -1 or above the threshold.
 // src: https://www.postgresql.org/docs/current/runtime-config-replication.html#GUC-MAX-STANDBY-STREAMING-DELAY
 // src: https://www.postgresql.org/docs/current/hot-standby.html
 func evalStandbyStreamingDelayHigh(delayMs int64) []pgtuner.Advice {
@@ -161,17 +141,16 @@ func evalStandbyStreamingDelayHigh(delayMs int64) []pgtuner.Advice {
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "max_standby_streaming_delay is very high: long conflict waits can cause primary bloat",
-			Message: fmt.Sprintf("max_standby_streaming_delay=%s. When a WAL replay record conflicts with a running query, the standby will wait this long before cancelling the query. Very long waits stall WAL application, increasing replication lag and forcing the primary to retain dead rows (bloat) for longer.", label),
-			Detail:  "Consider a shorter delay (e.g. 30 000 ms = 30s). Pair with hot_standby_feedback=on if long queries must run reliably on the standby without causing primary bloat.",
+			Message: fmt.Sprintf("max_standby_streaming_delay=%s. When a WAL replay record conflicts with a running query, the standby waits this long before it cancels the query. Very long waits stall WAL application. This increases replication lag and makes the primary retain dead rows (bloat) for longer.", label),
+			Detail:  "Consider a shorter delay (for example 30 000 ms = 30s). If long queries must run reliably on the standby without primary bloat, also set hot_standby_feedback=on.",
 			DocRef:  docRuntimeReplication,
 		}}
 	}
 	return nil
 }
 
-// evalHotStandbyFeedbackOn is the pure decision function for
-// hot_standby_feedback=on.  Enabling feedback prevents cancellations at the
-// cost of increased primary bloat; both states deserve an Info notice.
+// evalHotStandbyFeedbackOn returns an Info advice when hot_standby_feedback is on.
+// The setting prevents cancellations but can increase primary bloat.
 // src: https://www.postgresql.org/docs/current/runtime-config-replication.html#GUC-HOT-STANDBY-FEEDBACK
 // src: https://www.postgresql.org/docs/current/hot-standby.html
 func evalHotStandbyFeedbackOn(feedbackOn bool) []pgtuner.Advice {
@@ -181,8 +160,8 @@ func evalHotStandbyFeedbackOn(feedbackOn bool) []pgtuner.Advice {
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "hot_standby_feedback=on: prevents query cancellations but can increase primary bloat",
-			Message: "hot_standby_feedback=on causes this standby to report its oldest active transaction to the primary. The primary will not vacuum rows still needed by standby queries, preventing cancellations. The tradeoff is that the primary may accumulate dead rows (bloat) if standby queries are long-running.",
-			Detail:  "This is an intentional tradeoff between standby query stability and primary table bloat. Monitor the primary for excessive dead tuples (pg_stat_user_tables.n_dead_tup) when hot_standby_feedback is enabled.",
+			Message: "hot_standby_feedback=on makes this standby report its oldest active transaction to the primary. The primary does not vacuum rows that standby queries still need. This prevents cancellations. The tradeoff is that the primary may accumulate dead rows (bloat) if standby queries run for a long time.",
+			Detail:  "This is an intentional tradeoff between standby query stability and primary table bloat. When hot_standby_feedback is on, monitor the primary for excessive dead tuples (pg_stat_user_tables.n_dead_tup).",
 			DocRef:  docRuntimeReplication,
 		}}
 	}
@@ -190,8 +169,7 @@ func evalHotStandbyFeedbackOn(feedbackOn bool) []pgtuner.Advice {
 }
 
 // ReplicaRow holds per-standby lag data from pg_stat_replication.
-// Lag values are in seconds extracted from the interval columns; nil means
-// the column was NULL (standby hasn't started replaying yet).
+// Lag is in seconds. A nil value means the column was NULL (the standby has not started replay).
 // src: https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STAT-REPLICATION-VIEW
 type ReplicaRow struct {
 	ApplicationName string
@@ -199,11 +177,8 @@ type ReplicaRow struct {
 	ReplayLagSecs   *float64 // nullable; EXTRACT(EPOCH FROM replay_lag)
 }
 
-// evalReplicationLag is the pure decision function for primary-side lag advice.
-// It inspects a slice of ReplicaRow values and returns advice for:
-//   - any standby with replay_lag > 30 s → Warn
-//   - synchronous_standby_names is set but no standby is in sync state → Warn
-//
+// evalReplicationLag returns Warn advice for any standby with replay_lag over 30 s.
+// It also warns when synchronous_standby_names is set but no standby is in sync state.
 // src: https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STAT-REPLICATION-VIEW
 func evalReplicationLag(rows []ReplicaRow, syncStandbyNames string) []pgtuner.Advice {
 	const section = "Replication"
@@ -215,16 +190,14 @@ func evalReplicationLag(rows []ReplicaRow, syncStandbyNames string) []pgtuner.Ad
 				Level:   pgtuner.Warn,
 				Section: section,
 				Title:   fmt.Sprintf("Standby %q has significant replay lag", r.ApplicationName),
-				Message: fmt.Sprintf("Standby %q (sync_state=%q) has a replay_lag of %.1f seconds, which exceeds the %g-second threshold. The standby is lagging behind the primary.", r.ApplicationName, r.SyncState, *r.ReplayLagSecs, replicationLagWarnSeconds),
-				Detail:  "Investigate network bandwidth, disk I/O on the standby, or whether the standby is under heavy load. Review pg_stat_replication.replay_lag.",
+				Message: fmt.Sprintf("Standby %q (sync_state=%q) has a replay_lag of %.1f seconds. This exceeds the %g-second threshold. The standby lags behind the primary.", r.ApplicationName, r.SyncState, *r.ReplayLagSecs, replicationLagWarnSeconds),
+				Detail:  "Check the network bandwidth and the disk I/O on the standby. Check also if the standby has a heavy load. Review pg_stat_replication.replay_lag.",
 				DocRef:  docStatReplication,
 			})
 		}
 	}
 
-	// synchronous_standby_names is set but no standby is in 'sync' state.
-	// This means synchronous commits are either waiting indefinitely or falling
-	// back to asynchronous depending on synchronous_commit setting.
+	// Without a sync standby, commits wait indefinitely or fall back to asynchronous, depending on synchronous_commit.
 	// src: https://www.postgresql.org/docs/current/runtime-config-replication.html#GUC-SYNCHRONOUS-STANDBY-NAMES
 	if strings.TrimSpace(syncStandbyNames) != "" {
 		hasSyncStandby := false
@@ -239,8 +212,8 @@ func evalReplicationLag(rows []ReplicaRow, syncStandbyNames string) []pgtuner.Ad
 				Level:   pgtuner.Warn,
 				Section: section,
 				Title:   "synchronous_standby_names is set but no standby is in sync state",
-				Message: fmt.Sprintf("synchronous_standby_names=%q but pg_stat_replication shows no standby with sync_state='sync'. Synchronous commit may not be providing the expected durability guarantee.", syncStandbyNames),
-				Detail:  "Check that the named standbys are connected and streaming. Review pg_stat_replication.sync_state and synchronous_commit.",
+				Message: fmt.Sprintf("synchronous_standby_names=%q but pg_stat_replication shows no standby with sync_state='sync'. Synchronous commit may not give the expected durability guarantee.", syncStandbyNames),
+				Detail:  "Make sure the named standbys are connected and streaming. Review pg_stat_replication.sync_state and synchronous_commit.",
 				DocRef:  docRuntimeReplication,
 			})
 		}
@@ -249,9 +222,7 @@ func evalReplicationLag(rows []ReplicaRow, syncStandbyNames string) []pgtuner.Ad
 	return out
 }
 
-// evalWalLevelVsLogical is the pure decision function for the wal_level-vs-logical check.
-// If logical replication is in use (logical slots or publications exist) but
-// wal_level is not 'logical', logical replication cannot function.
+// evalWalLevelVsLogical returns Bad advice when logical slots or publications exist but wal_level is not 'logical'.
 // src: https://www.postgresql.org/docs/current/runtime-config-wal.html#GUC-WAL-LEVEL
 func evalWalLevelVsLogical(walLevel string, logicalSlots, pubCount int) *pgtuner.Advice {
 	if logicalSlots == 0 && pubCount == 0 {
@@ -264,7 +235,7 @@ func evalWalLevelVsLogical(walLevel string, logicalSlots, pubCount int) *pgtuner
 		Level:   pgtuner.Bad,
 		Section: "Replication",
 		Title:   "wal_level must be 'logical' for logical replication to function",
-		Message: fmt.Sprintf("wal_level=%q but there are %d logical replication slot(s) and/or %d publication(s). Logical replication requires wal_level='logical'; current setting is insufficient.", walLevel, logicalSlots, pubCount),
+		Message: fmt.Sprintf("wal_level=%q but there are %d logical replication slot(s) and/or %d publication(s). Logical replication requires wal_level='logical'. The current setting is not sufficient.", walLevel, logicalSlots, pubCount),
 		Detail:  "Set wal_level=logical in postgresql.conf and reload. A server restart is required.",
 		DocRef:  docRuntimeWAL,
 	}
@@ -276,22 +247,15 @@ type ReplicationCheck struct{ clusterScoped }
 
 func (ReplicationCheck) Name() string { return "replication" }
 
-// Run checks replication-related settings and queries live slot metadata.
-// Each sub-check is independent; a query failure produces a single Unknown
-// advice for that sub-check and does not block the others.
-// It never panics and never returns an error.
+// Run checks replication settings and queries live slot metadata.
+// A query failure gives one Unknown advice for that sub-check and does not block the others.
 func (ReplicationCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 	const section = "Replication"
 	var out []pgtuner.Advice
 
-	// --- Role report (Info) -------------------------------------------------------
-	// Always emit the detected role as an informational baseline.
 	out = append(out, evalRoleInfo(p.Role))
 
-	// --- max_wal_senders (setting) ------------------------------------------------
-	// max_wal_senders=0 disables all streaming replication and WAL-streaming
-	// backups (pg_basebackup). This may be intentional on a non-primary node, but
-	// worth surfacing.
+	// max_wal_senders=0 disables streaming replication and pg_basebackup. It can be intentional on a non-primary node.
 	// src: https://www.postgresql.org/docs/current/runtime-config-replication.html#GUC-MAX-WAL-SENDERS
 	if mws, ok := p.Settings.Int("max_wal_senders"); ok && mws == 0 {
 		out = append(out, pgtuner.Advice{
@@ -299,25 +263,19 @@ func (ReplicationCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 			Section: section,
 			Title:   "max_wal_senders=0; no streaming replication or WAL-streaming backup possible",
 			Message: "max_wal_senders=0 disables all WAL-sender processes. Streaming replication standby servers and pg_basebackup cannot connect. This may be intentional on a standalone server.",
-			Detail:  "Set max_wal_senders to at least 2 to support standby servers and streaming backups.",
+			Detail:  "To support standby servers and streaming backups, set max_wal_senders to at least 2.",
 			DocRef:  docWALSenders,
 		})
 	}
 
-	// --- Standby-specific checks --------------------------------------------------
-	// These only apply when this server is a streaming/archive standby.
 	if p.Role.Role == pg.RoleStandby {
 		out = append(out, runStandbyChecks(ctx, p)...)
 	}
 
-	// --- Primary-with-standbys checks ---------------------------------------------
-	// These only apply when standbys are actively connected.
 	if p.Role.Role == pg.RolePrimary {
 		out = append(out, runPrimaryChecks(ctx, p)...)
 	}
 
-	// --- inactive slots (query) ---------------------------------------------------
-	// Query pg_replication_slots for slots that are not currently active.
 	// src: https://www.postgresql.org/docs/current/view-pg-replication-slots.html
 	const inactiveSlotsSQL = "SELECT slot_name FROM pg_replication_slots WHERE NOT active ORDER BY slot_name"
 	slotRows, err := p.Conn.Query(ctx, inactiveSlotsSQL)
@@ -326,7 +284,7 @@ func (ReplicationCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 			Level:   pgtuner.Unknown,
 			Section: section,
 			Title:   "Replication slot query failed",
-			Message: fmt.Sprintf("Could not query pg_replication_slots for inactive slots: %v", err),
+			Message: fmt.Sprintf("pgtuner could not query pg_replication_slots for inactive slots: %v", err),
 		})
 	} else {
 		func() {
@@ -339,7 +297,7 @@ func (ReplicationCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 						Level:   pgtuner.Unknown,
 						Section: section,
 						Title:   "Replication slot scan failed",
-						Message: fmt.Sprintf("Could not scan pg_replication_slots row: %v", err),
+						Message: fmt.Sprintf("pgtuner could not scan a pg_replication_slots row: %v", err),
 					})
 					return
 				}
@@ -350,7 +308,7 @@ func (ReplicationCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 					Level:   pgtuner.Unknown,
 					Section: section,
 					Title:   "Replication slot iteration failed",
-					Message: fmt.Sprintf("Error iterating pg_replication_slots rows: %v", err),
+					Message: fmt.Sprintf("pgtuner got an error while it read the pg_replication_slots rows: %v", err),
 				})
 				return
 			}
@@ -360,23 +318,18 @@ func (ReplicationCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 		}()
 	}
 
-	// --- pg_stat_replication_slots spill stats (PG≥14) ---------------------------
-	// pg_stat_replication_slots tracks how much decoded WAL each logical replication
-	// slot has spilled to disk. Large spill_bytes indicates the consumer is far
-	// behind, stressing storage. We emit a light Info if any slot exceeds our
-	// threshold; skip the query on older versions.
+	// PG14+ only. Large spill_bytes means the logical slot consumer is far behind.
 	// src: https://www.postgresql.org/docs/14/monitoring-stats.html#MONITORING-PG-STAT-REPLICATION-SLOTS-VIEW
 	if p.Version.AtLeast(14, 0) {
 		const spillSQL = `SELECT slot_name, spill_bytes FROM pg_stat_replication_slots
 			WHERE spill_bytes > $1 ORDER BY spill_bytes DESC LIMIT 5`
 		spillRows, err := p.Conn.Query(ctx, spillSQL, replicationSlotSpillWarnThreshold)
 		if err != nil {
-			// Non-fatal: spill stats are informational; don't block the rest.
 			out = append(out, pgtuner.Advice{
 				Level:   pgtuner.Unknown,
 				Section: section,
 				Title:   "Replication slot spill stats unavailable",
-				Message: fmt.Sprintf("Could not query pg_stat_replication_slots for spill statistics: %v", err),
+				Message: fmt.Sprintf("pgtuner could not query pg_stat_replication_slots for spill statistics: %v", err),
 			})
 		} else {
 			func() {
@@ -389,7 +342,7 @@ func (ReplicationCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 							Level:   pgtuner.Unknown,
 							Section: section,
 							Title:   "Replication spill scan failed",
-							Message: fmt.Sprintf("could not scan pg_stat_replication_slots row: %v", err),
+							Message: fmt.Sprintf("pgtuner could not scan a pg_stat_replication_slots row: %v", err),
 						})
 						return
 					}
@@ -397,8 +350,8 @@ func (ReplicationCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 						Level:   pgtuner.Info,
 						Section: section,
 						Title:   fmt.Sprintf("Replication slot %q has large WAL spill (PG14+)", slotName),
-						Message: fmt.Sprintf("Slot %q has spilled %.1f GiB of decoded WAL to disk. Large spill values indicate the logical replication consumer is lagging significantly behind the WAL stream.", slotName, float64(spillBytes)/float64(1<<30)),
-						Detail:  "Check the consumer process (subscriber or logical replication client) and consider increasing wal_sender_timeout or reviewing consumer throughput.",
+						Message: fmt.Sprintf("Slot %q has spilled %.1f GiB of decoded WAL to disk. Large spill values indicate that the logical replication consumer lags far behind the WAL stream.", slotName, float64(spillBytes)/float64(1<<30)),
+						Detail:  "Check the consumer process (subscriber or logical replication client). Consider a higher wal_sender_timeout. Review the consumer throughput.",
 						DocRef:  docStatReplicationSlots,
 					})
 				}
@@ -407,63 +360,55 @@ func (ReplicationCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 						Level:   pgtuner.Unknown,
 						Section: section,
 						Title:   "Replication spill stats unavailable",
-						Message: fmt.Sprintf("error iterating pg_stat_replication_slots: %v", err),
+						Message: fmt.Sprintf("pgtuner got an error while it read pg_stat_replication_slots: %v", err),
 					})
 				}
 			}()
 		}
 	}
 
-	// --- Step 3: Logical replication type checks ----------------------------------
 	out = append(out, runLogicalTypeChecks(ctx, p)...)
 
-	// OK fallthrough: only the role-Info is emitted at this point if nothing else fired.
-	// The role-Info always fires, so len(out) >= 1; no separate OK fallthrough needed.
 	return out
 }
 
-// runStandbyChecks emits advice specific to a server that is in recovery (standby).
-// Each sub-check is independent; query failures produce Unknown advice.
+// runStandbyChecks emits advice for a server in recovery. Query failures give Unknown advice.
 // src: https://www.postgresql.org/docs/current/hot-standby.html
 // src: https://www.postgresql.org/docs/current/runtime-config-replication.html
 func runStandbyChecks(ctx context.Context, p *Probe) []pgtuner.Advice {
 	const section = "Replication"
 	var out []pgtuner.Advice
 
-	// hot_standby: if off, read queries cannot run on this standby.
 	// src: https://www.postgresql.org/docs/current/hot-standby.html
 	if !p.Settings.Bool("hot_standby") {
 		out = append(out, pgtuner.Advice{
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "hot_standby=off: read queries cannot run on this standby",
-			Message: "hot_standby is disabled. Read-only SQL queries from clients cannot be served by this standby server.",
-			Detail:  "Set hot_standby=on to allow read-only queries on the standby. Requires a server restart.",
+			Message: "hot_standby is disabled. This standby server cannot serve read-only SQL queries from clients.",
+			Detail:  "To allow read-only queries on the standby, set hot_standby=on. This requires a server restart.",
 			DocRef:  docHotStandby,
 		})
 	}
 
-	// hot_standby_feedback: if off, long-running queries on this standby may be
-	// cancelled by vacuum activity on the primary.
+	// With feedback off, vacuum on the primary may cancel long queries on this standby.
 	// src: https://www.postgresql.org/docs/current/runtime-config-replication.html#GUC-HOT-STANDBY-FEEDBACK
 	if !p.Settings.Bool("hot_standby_feedback") {
 		out = append(out, pgtuner.Advice{
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "hot_standby_feedback=off: standby queries may be cancelled by primary vacuum",
-			Message: "hot_standby_feedback=off means the standby does not inform the primary of rows it needs. Aggressive VACUUM on the primary can cancel long-running queries on this standby.",
-			Detail:  "Enable hot_standby_feedback=on to prevent cancellations from vacuum conflicts. Note: this trades query stability for slightly increased table bloat on the primary.",
+			Message: "hot_standby_feedback=off means the standby does not tell the primary which rows it needs. Aggressive VACUUM on the primary can cancel long-running queries on this standby.",
+			Detail:  "Set hot_standby_feedback=on to prevent cancellations from vacuum conflicts. This trades query stability for slightly more table bloat on the primary.",
 			DocRef:  docRuntimeReplication,
 		})
 	}
 
-	// max_standby_archive_delay: 0 → immediate cancellation.
 	// src: https://www.postgresql.org/docs/current/runtime-config-replication.html#GUC-MAX-STANDBY-ARCHIVE-DELAY
 	if v, ok := p.Settings.Get("max_standby_archive_delay"); ok {
 		out = append(out, evalStandbyArchiveDelay(v)...)
 	}
 
-	// max_standby_streaming_delay: 0 → immediate cancellation; very high → primary bloat risk.
 	// src: https://www.postgresql.org/docs/current/runtime-config-replication.html#GUC-MAX-STANDBY-STREAMING-DELAY
 	if v, ok := p.Settings.Get("max_standby_streaming_delay"); ok {
 		if v == "0" {
@@ -471,8 +416,8 @@ func runStandbyChecks(ctx context.Context, p *Probe) []pgtuner.Advice {
 				Level:   pgtuner.Info,
 				Section: section,
 				Title:   "max_standby_streaming_delay=0: standby queries cancelled immediately on conflict",
-				Message: "max_standby_streaming_delay=0 means that any query conflicting with WAL replay is cancelled immediately, without any grace period.",
-				Detail:  "Consider setting max_standby_streaming_delay to a positive value (e.g. '30s') to give running queries a chance to finish before being cancelled.",
+				Message: "max_standby_streaming_delay=0 means the standby cancels immediately any query that conflicts with WAL replay. There is no grace period.",
+				Detail:  "Consider a positive max_standby_streaming_delay (for example '30s'). Running queries then have time to finish before the standby cancels them.",
 				DocRef:  docRuntimeReplication,
 			})
 		} else if msd, ok2 := p.Settings.Int("max_standby_streaming_delay"); ok2 {
@@ -480,26 +425,23 @@ func runStandbyChecks(ctx context.Context, p *Probe) []pgtuner.Advice {
 		}
 	}
 
-	// hot_standby_feedback: off → vacuum-conflict cancellations; on → primary bloat tradeoff.
-	// Both states are surfaced as Info.
 	// src: https://www.postgresql.org/docs/current/runtime-config-replication.html#GUC-HOT-STANDBY-FEEDBACK
 	// src: https://www.postgresql.org/docs/current/hot-standby.html
 	out = append(out, evalHotStandbyFeedbackOn(p.Settings.Bool("hot_standby_feedback"))...)
 
-	// pg_stat_wal_receiver: if no row, the standby is not currently streaming.
+	// No row in pg_stat_wal_receiver means the standby is not streaming.
 	// src: https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STAT-WAL-RECEIVER-VIEW
 	const walReceiverSQL = "SELECT status FROM pg_stat_wal_receiver LIMIT 1"
 	var status string
 	err := p.Conn.QueryRow(ctx, walReceiverSQL).Scan(&status)
 	if err != nil {
-		// pgx returns pgx.ErrNoRows when the view is empty (no streaming receiver).
-		// Any other error is a genuine query failure.
+		// Any error other than no rows is a query failure.
 		if strings.Contains(err.Error(), "no rows") {
 			out = append(out, pgtuner.Advice{
 				Level:   pgtuner.Info,
 				Section: section,
 				Title:   "Standby has no active streaming receiver (pg_stat_wal_receiver is empty)",
-				Message: "pg_stat_wal_receiver has no rows. This standby may be using archive recovery rather than streaming replication, or streaming is temporarily disconnected.",
+				Message: "pg_stat_wal_receiver has no rows. This standby may use archive recovery instead of streaming replication. Streaming may also be disconnected for a short time.",
 				DocRef:  docWalReceiver,
 			})
 		} else {
@@ -507,24 +449,21 @@ func runStandbyChecks(ctx context.Context, p *Probe) []pgtuner.Advice {
 				Level:   pgtuner.Unknown,
 				Section: section,
 				Title:   "pg_stat_wal_receiver query failed",
-				Message: fmt.Sprintf("Could not query pg_stat_wal_receiver: %v", err),
+				Message: fmt.Sprintf("pgtuner could not query pg_stat_wal_receiver: %v", err),
 				DocRef:  docWalReceiver,
 			})
 		}
 	}
-	// If scan succeeded: status is non-empty (e.g. "streaming") → no advice needed.
 
 	return out
 }
 
-// runPrimaryChecks emits advice specific to a primary that has connected standbys.
-// Each sub-check is independent; query failures produce Unknown advice.
+// runPrimaryChecks emits advice for a primary with connected standbys. Query failures give Unknown advice.
 // src: https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STAT-REPLICATION-VIEW
 func runPrimaryChecks(ctx context.Context, p *Probe) []pgtuner.Advice {
 	const section = "Replication"
 	var out []pgtuner.Advice
 
-	// Query per-standby lag from pg_stat_replication.
 	// EXTRACT(EPOCH FROM replay_lag) returns NULL when replay_lag is NULL.
 	// src: https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STAT-REPLICATION-VIEW
 	const lagSQL = `SELECT application_name, sync_state,
@@ -538,7 +477,7 @@ func runPrimaryChecks(ctx context.Context, p *Probe) []pgtuner.Advice {
 			Level:   pgtuner.Unknown,
 			Section: section,
 			Title:   "pg_stat_replication lag query failed",
-			Message: fmt.Sprintf("Could not query pg_stat_replication for standby lag: %v", err),
+			Message: fmt.Sprintf("pgtuner could not query pg_stat_replication for standby lag: %v", err),
 			DocRef:  docStatReplication,
 		})
 	} else {
@@ -553,7 +492,7 @@ func runPrimaryChecks(ctx context.Context, p *Probe) []pgtuner.Advice {
 						Level:   pgtuner.Unknown,
 						Section: section,
 						Title:   "pg_stat_replication lag scan failed",
-						Message: fmt.Sprintf("Could not scan pg_stat_replication row: %v", err),
+						Message: fmt.Sprintf("pgtuner could not scan a pg_stat_replication row: %v", err),
 						DocRef:  docStatReplication,
 					})
 					return
@@ -569,7 +508,7 @@ func runPrimaryChecks(ctx context.Context, p *Probe) []pgtuner.Advice {
 					Level:   pgtuner.Unknown,
 					Section: section,
 					Title:   "pg_stat_replication iteration failed",
-					Message: fmt.Sprintf("Error iterating pg_stat_replication: %v", err),
+					Message: fmt.Sprintf("pgtuner got an error while it read pg_stat_replication: %v", err),
 					DocRef:  docStatReplication,
 				})
 				return
@@ -579,9 +518,8 @@ func runPrimaryChecks(ctx context.Context, p *Probe) []pgtuner.Advice {
 		}()
 	}
 
-	// wal_keep_size / wal_keep_segments: if zero and no replication slots, a standby
-	// may desync if WAL is recycled between connects.
-	// PG13+ uses wal_keep_size (in MiB); PG12 and earlier used wal_keep_segments.
+	// With zero WAL retention and no slots, a standby may desync when WAL is recycled.
+	// PG13+ uses wal_keep_size (in MiB). PG12 and earlier use wal_keep_segments.
 	// src: https://www.postgresql.org/docs/current/runtime-config-replication.html#GUC-WAL-KEEP-SIZE
 	// src: https://www.postgresql.org/docs/12/runtime-config-replication.html#GUC-WAL-KEEP-SEGMENTS
 	walKeeperIsZero := false
@@ -596,14 +534,13 @@ func runPrimaryChecks(ctx context.Context, p *Probe) []pgtuner.Advice {
 	}
 
 	if walKeeperIsZero {
-		// Count replication slots as an alternative WAL-retention mechanism.
 		var slotCount int
 		if err := p.Conn.QueryRow(ctx, "SELECT count(*) FROM pg_replication_slots").Scan(&slotCount); err != nil {
 			out = append(out, pgtuner.Advice{
 				Level:   pgtuner.Unknown,
 				Section: section,
 				Title:   "Could not count replication slots for WAL-keep check",
-				Message: fmt.Sprintf("Could not count pg_replication_slots: %v", err),
+				Message: fmt.Sprintf("pgtuner could not count pg_replication_slots: %v", err),
 			})
 		} else if slotCount == 0 {
 			walKeepGUC := "wal_keep_size"
@@ -614,8 +551,8 @@ func runPrimaryChecks(ctx context.Context, p *Probe) []pgtuner.Advice {
 				Level:   pgtuner.Warn,
 				Section: section,
 				Title:   fmt.Sprintf("%s=0 with no replication slots: standbys may desync if WAL is recycled", walKeepGUC),
-				Message: fmt.Sprintf("%s=0 and there are no replication slots. If a standby disconnects, PostgreSQL may recycle the WAL segments it needs to resume streaming, forcing a full re-sync.", walKeepGUC),
-				Detail:  fmt.Sprintf("Set %s to retain enough WAL for standbys to reconnect after brief outages, or create a replication slot to retain WAL automatically.", walKeepGUC),
+				Message: fmt.Sprintf("%s=0 and there are no replication slots. If a standby disconnects, PostgreSQL may recycle the WAL segments that the standby needs to resume streaming. The standby then needs a full re-sync.", walKeepGUC),
+				Detail:  fmt.Sprintf("Set %s to retain enough WAL for standbys to reconnect after short outages. Alternatively, create a replication slot to retain WAL automatically.", walKeepGUC),
 				DocRef:  docRuntimeReplication,
 			})
 		}
@@ -624,8 +561,7 @@ func runPrimaryChecks(ctx context.Context, p *Probe) []pgtuner.Advice {
 	return out
 }
 
-// runLogicalTypeChecks emits advice about logical replication (Step 3).
-// Each sub-check is independent; query failures produce Unknown advice.
+// runLogicalTypeChecks emits advice about logical replication. Query failures give Unknown advice.
 // src: https://www.postgresql.org/docs/current/logical-replication.html
 // src: https://www.postgresql.org/docs/current/view-pg-replication-slots.html
 // src: https://www.postgresql.org/docs/current/catalog-pg-publication.html
@@ -634,8 +570,6 @@ func runLogicalTypeChecks(ctx context.Context, p *Probe) []pgtuner.Advice {
 	const section = "Replication"
 	var out []pgtuner.Advice
 
-	// --- Logical slot count -------------------------------------------------------
-	// src: https://www.postgresql.org/docs/current/view-pg-replication-slots.html
 	var logicalSlotCount int
 	if err := p.Conn.QueryRow(ctx,
 		"SELECT count(*) FROM pg_replication_slots WHERE slot_type = 'logical'",
@@ -644,22 +578,21 @@ func runLogicalTypeChecks(ctx context.Context, p *Probe) []pgtuner.Advice {
 			Level:   pgtuner.Unknown,
 			Section: section,
 			Title:   "Could not count logical replication slots",
-			Message: fmt.Sprintf("Could not query pg_replication_slots for logical slots: %v", err),
+			Message: fmt.Sprintf("pgtuner could not query pg_replication_slots for logical slots: %v", err),
 			DocRef:  docReplicationSlots,
 		})
-		logicalSlotCount = -1 // sentinel: query failed
+		logicalSlotCount = -1 // sentinel for a failed query
 	} else if logicalSlotCount > 0 {
 		out = append(out, pgtuner.Advice{
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   fmt.Sprintf("Logical decoding is in use (%d logical slot(s))", logicalSlotCount),
 			Message: fmt.Sprintf("pg_replication_slots shows %d logical replication slot(s). Logical decoding is active on this server.", logicalSlotCount),
-			Detail:  "Ensure logical replication consumers (subscribers, CDC tools) are active. Inactive logical slots retain WAL indefinitely.",
+			Detail:  "Make sure the logical replication consumers (subscribers, CDC tools) are active. Inactive logical slots retain WAL indefinitely.",
 			DocRef:  docReplicationSlots,
 		})
 	}
 
-	// --- Publication count --------------------------------------------------------
 	// src: https://www.postgresql.org/docs/current/catalog-pg-publication.html
 	var pubCount int
 	if err := p.Conn.QueryRow(ctx, "SELECT count(*) FROM pg_publication").Scan(&pubCount); err != nil {
@@ -667,21 +600,20 @@ func runLogicalTypeChecks(ctx context.Context, p *Probe) []pgtuner.Advice {
 			Level:   pgtuner.Unknown,
 			Section: section,
 			Title:   "Could not count publications",
-			Message: fmt.Sprintf("Could not query pg_publication: %v", err),
+			Message: fmt.Sprintf("pgtuner could not query pg_publication: %v", err),
 			DocRef:  docLogicalReplication,
 		})
-		pubCount = -1 // sentinel: query failed
+		pubCount = -1 // sentinel for a failed query
 	} else if pubCount > 0 {
 		out = append(out, pgtuner.Advice{
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   fmt.Sprintf("Logical replication publisher: %d publication(s) defined", pubCount),
-			Message: fmt.Sprintf("pg_publication shows %d publication(s). This server is publishing data via logical replication.", pubCount),
+			Message: fmt.Sprintf("pg_publication shows %d publication(s). This server publishes data through logical replication.", pubCount),
 			DocRef:  docLogicalReplication,
 		})
 	}
 
-	// --- Subscription count -------------------------------------------------------
 	// src: https://www.postgresql.org/docs/current/catalog-pg-subscription.html
 	var subCount int
 	if err := p.Conn.QueryRow(ctx, "SELECT count(*) FROM pg_subscription").Scan(&subCount); err != nil {
@@ -689,20 +621,19 @@ func runLogicalTypeChecks(ctx context.Context, p *Probe) []pgtuner.Advice {
 			Level:   pgtuner.Unknown,
 			Section: section,
 			Title:   "Could not count subscriptions",
-			Message: fmt.Sprintf("Could not query pg_subscription: %v", err),
+			Message: fmt.Sprintf("pgtuner could not query pg_subscription: %v", err),
 			DocRef:  docLogicalReplication,
 		})
-		subCount = -1 // sentinel: query failed
+		subCount = -1 // sentinel for a failed query
 	} else if subCount > 0 {
 		out = append(out, pgtuner.Advice{
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   fmt.Sprintf("Logical replication subscriber: %d subscription(s) active", subCount),
-			Message: fmt.Sprintf("pg_subscription shows %d subscription(s). This server is subscribing to logical replication from one or more publishers.", subCount),
+			Message: fmt.Sprintf("pg_subscription shows %d subscription(s). This server subscribes to logical replication from one or more publishers.", subCount),
 			DocRef:  docLogicalReplication,
 		})
-		// Query pg_stat_subscription for apply worker status (best-effort; count
-		// active workers only — widely available since PG10).
+		// Best effort: count active apply workers (available since PG10).
 		// src: https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STAT-SUBSCRIPTION-VIEW
 		var activeWorkers int
 		if err := p.Conn.QueryRow(ctx,
@@ -712,19 +643,13 @@ func runLogicalTypeChecks(ctx context.Context, p *Probe) []pgtuner.Advice {
 				Level:   pgtuner.Unknown,
 				Section: section,
 				Title:   "Could not query pg_stat_subscription apply workers",
-				Message: fmt.Sprintf("Could not query pg_stat_subscription: %v", err),
+				Message: fmt.Sprintf("pgtuner could not query pg_stat_subscription: %v", err),
 				DocRef:  docLogicalReplication,
 			})
 		}
-		// No separate advice for active workers: if sub count > 0 the Info above
-		// is sufficient on an idle dev instance. Unhealthy workers (pid IS NULL)
-		// are a future Epic 4 concern.
 	}
 
-	// --- wal_level vs logical -----------------------------------------------------
-	// Logical replication requires wal_level='logical'. If logical slots or
-	// publications are present but wal_level is insufficient, warn loudly.
-	// Only run this check when both counts are known (not -1 sentinel).
+	// Run only when both counts are known (no -1 sentinel).
 	// src: https://www.postgresql.org/docs/current/runtime-config-wal.html#GUC-WAL-LEVEL
 	if logicalSlotCount >= 0 && pubCount >= 0 {
 		walLevel, _ := p.Settings.Get("wal_level")

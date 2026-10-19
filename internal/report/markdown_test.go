@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OpenRemedy/pgtuner/pkg/pgtuner"
+	"github.com/soylic/pgtuner/pkg/pgtuner"
 )
 
 func TestWriteMarkdown(t *testing.T) {
@@ -41,21 +41,17 @@ func TestWriteMarkdown(t *testing.T) {
 	got := buf.String()
 
 	checks := []string{
-		"# PostgreSQL Tuning Report — server 16.2",
+		"# PostgreSQL Tuning Report, server 16.2",
 		"**Grade: A**",
 		"Summary: 1 ok · 1 info · 0 todo · 1 warn · 0 bad · 0 unknown",
 		"### memory",
 		"| Level | Title | Message |",
 		"|-------|-------|---------|",
 		"| warn | shared_buffers low | shared_buffers is below 25% of RAM. |",
-		// Pipe in the title must be escaped.
 		"| info | work_mem \\| default | work_mem is at default. |",
-		// Detail/Ref sub-lines.
 		"- _Detail:_ Current value is 128MB.",
 		"- _Ref:_ https://www.postgresql.org/docs/current/runtime-config-resource.html",
-		// Section heading for the second section.
 		"### security",
-		// Database tag prefix on the title.
 		"| ok | [appdb] ssl enabled | SSL is enabled. |",
 	}
 	for _, c := range checks {
@@ -64,8 +60,7 @@ func TestWriteMarkdown(t *testing.T) {
 		}
 	}
 
-	// The newline in the second item's message must be collapsed, not emitted raw
-	// inside the table row.
+	// A newline in a message must not appear inside the table row.
 	if strings.Contains(got, "work_mem is at\ndefault.") {
 		t.Errorf("newline in message was not collapsed:\n%s", got)
 	}

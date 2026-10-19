@@ -1,4 +1,4 @@
-module github.com/OpenRemedy/pgtuner
+module github.com/soylic/pgtuner
 
 go 1.25.0
 

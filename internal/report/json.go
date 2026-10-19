@@ -5,10 +5,9 @@ import (
 	"encoding/json"
 	"io"
 
-	"github.com/OpenRemedy/pgtuner/pkg/pgtuner"
+	"github.com/soylic/pgtuner/pkg/pgtuner"
 )
 
-// WriteJSON writes the report as indented JSON.
 func WriteJSON(w io.Writer, r *pgtuner.Report) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")

@@ -3,13 +3,10 @@ package checks
 import (
 	"testing"
 
-	"github.com/OpenRemedy/pgtuner/internal/pg"
-	"github.com/OpenRemedy/pgtuner/pkg/pgtuner"
+	"github.com/soylic/pgtuner/internal/pg"
+	"github.com/soylic/pgtuner/pkg/pgtuner"
 )
 
-// --- evalTempFiles unit tests -------------------------------------------------
-
-// TestEvalTempFilesZero: no temp files → no advice (empty slice).
 func TestEvalTempFilesZero(t *testing.T) {
 	got := evalTempFiles(0, 0)
 	if len(got) != 0 {
@@ -17,9 +14,7 @@ func TestEvalTempFilesZero(t *testing.T) {
 	}
 }
 
-// TestEvalTempFilesSmallBytes: nonzero temp_files but tiny bytes (< 1 GiB) → no Warn.
 func TestEvalTempFilesSmallBytes(t *testing.T) {
-	// 5 files, 100 MiB — below the 1 GiB threshold.
 	got := evalTempFiles(5, 100*1024*1024)
 	for _, a := range got {
 		if a.Level == pgtuner.Warn {
@@ -28,16 +23,13 @@ func TestEvalTempFilesSmallBytes(t *testing.T) {
 	}
 }
 
-// TestEvalTempFilesLarge: nonzero temp_files AND bytes > 1 GiB → Warn.
 func TestEvalTempFilesLarge(t *testing.T) {
-	// 10 files, 2 GiB — above threshold.
 	got := evalTempFiles(10, 2*1024*1024*1024)
 	if len(got) == 0 || got[0].Level != pgtuner.Warn {
 		t.Fatalf("expected Warn for large temp spill, got %v", got)
 	}
 }
 
-// TestEvalTempFilesExactThreshold: bytes == 1 GiB exactly → no Warn (> not >=).
 func TestEvalTempFilesExactThreshold(t *testing.T) {
 	got := evalTempFiles(1, 1*1024*1024*1024)
 	for _, a := range got {
@@ -47,9 +39,6 @@ func TestEvalTempFilesExactThreshold(t *testing.T) {
 	}
 }
 
-// --- evalStorageSettings unit tests -------------------------------------------
-
-// helper: run settings-only storage evaluation.
 func runStorageSettings(settings map[string]string, major, minor int) []pgtuner.Advice {
 	return evalStorageSettings(
 		pg.NewSettings(settings),
@@ -57,7 +46,6 @@ func runStorageSettings(settings map[string]string, major, minor int) []pgtuner.
 	)
 }
 
-// TestStorageDataChecksumsOffPrePG18: data_checksums=off on PG16 → Info (not Warn).
 func TestStorageDataChecksumsOffPrePG18(t *testing.T) {
 	got := runStorageSettings(map[string]string{
 		"data_checksums": "off",
@@ -72,7 +60,6 @@ func TestStorageDataChecksumsOffPrePG18(t *testing.T) {
 	}
 }
 
-// TestStorageDataChecksumsOffPG18: data_checksums=off on PG18 → Warn.
 func TestStorageDataChecksumsOffPG18(t *testing.T) {
 	got := runStorageSettings(map[string]string{
 		"data_checksums": "off",
@@ -82,7 +69,6 @@ func TestStorageDataChecksumsOffPG18(t *testing.T) {
 	}
 }
 
-// TestStorageDataChecksumsOn: data_checksums=on → no checksums advice.
 func TestStorageDataChecksumsOn(t *testing.T) {
 	got := runStorageSettings(map[string]string{
 		"data_checksums": "on",
@@ -94,7 +80,6 @@ func TestStorageDataChecksumsOn(t *testing.T) {
 	}
 }
 
-// TestStorageTOASTCompressionPGLZ: default_toast_compression=pglz on PG14 → Info.
 func TestStorageTOASTCompressionPGLZ(t *testing.T) {
 	got := runStorageSettings(map[string]string{
 		"default_toast_compression": "pglz",
@@ -104,7 +89,6 @@ func TestStorageTOASTCompressionPGLZ(t *testing.T) {
 	}
 }
 
-// TestStorageTOASTCompressionLZ4: default_toast_compression=lz4 → no advice.
 func TestStorageTOASTCompressionLZ4(t *testing.T) {
 	got := runStorageSettings(map[string]string{
 		"default_toast_compression": "lz4",
@@ -116,11 +100,9 @@ func TestStorageTOASTCompressionLZ4(t *testing.T) {
 	}
 }
 
-// TestStorageTOASTCompressionSkippedPrePG14: default_toast_compression check
-// should not fire on PG13 (GUC did not exist).
 func TestStorageTOASTCompressionSkippedPrePG14(t *testing.T) {
 	got := runStorageSettings(map[string]string{
-		"default_toast_compression": "pglz", // present in map but PG version is 13
+		"default_toast_compression": "pglz", // key present, but PG13 has no such GUC
 	}, 13, 0)
 	for _, a := range got {
 		if a.Title == "Consider lz4 for TOAST compression" {
@@ -129,7 +111,6 @@ func TestStorageTOASTCompressionSkippedPrePG14(t *testing.T) {
 	}
 }
 
-// TestStorageLogTempFilesDisabled: log_temp_files=-1 → Info.
 func TestStorageLogTempFilesDisabled(t *testing.T) {
 	got := runStorageSettings(map[string]string{
 		"log_temp_files": "-1",
@@ -139,7 +120,6 @@ func TestStorageLogTempFilesDisabled(t *testing.T) {
 	}
 }
 
-// TestStorageLogTempFilesEnabled: log_temp_files=0 → no log_temp_files advice.
 func TestStorageLogTempFilesEnabled(t *testing.T) {
 	got := runStorageSettings(map[string]string{
 		"log_temp_files": "0",

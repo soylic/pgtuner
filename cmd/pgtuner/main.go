@@ -10,21 +10,19 @@ import (
 	"os"
 	"strings"
 
-	"github.com/OpenRemedy/pgtuner/internal/report"
-	"github.com/OpenRemedy/pgtuner/pkg/pgtuner"
-	"github.com/OpenRemedy/pgtuner/pkg/tuner"
+	"github.com/soylic/pgtuner/internal/report"
+	"github.com/soylic/pgtuner/pkg/pgtuner"
+	"github.com/soylic/pgtuner/pkg/tuner"
 )
 
-// version is the tool version. It defaults to "dev" and is overridden at
-// build time via -ldflags "-X main.version=<tag>" (see the release workflow).
+// version defaults to "dev". The release build sets it with -ldflags "-X main.version=<tag>".
 var version = "dev"
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
-// run is the testable entry point. args are the CLI arguments (excluding the
-// program name). stdout and stderr are the output writers. Returns an exit code.
+// run is the testable entry point. args excludes the program name.
 func run(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("pgtuner", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -35,15 +33,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 	user := fs.String("user", "", "PostgreSQL user")
 	dbname := fs.String("dbname", "", "PostgreSQL database name")
 	format := fs.String("format", "terminal", "output format: terminal (alias text), json, csv, or markdown (alias md)")
-	osInspect := fs.Bool("os-inspect", false, "gather OS-level facts (Linux only)")
-	noColor := fs.Bool("no-color", false, "disable ANSI color in terminal output (only affects -format terminal; no-op for json/csv/markdown)")
-	showVersion := fs.Bool("version", false, "print tool version and exit")
-	minLevel := fs.String("min-level", "ok", "only show advice at or above this severity (ok/info/todo/warn/bad/unknown); summary stays full")
-	sortBy := fs.String("sort", "section", "advice ordering: section (group by section) or severity (Bad→…→Unknown)")
-	allDatabases := fs.Bool("all-databases", false, "run per-database checks against every user database (cluster-wide checks run once)")
+	osInspect := fs.Bool("os-inspect", false, "collect OS-level facts (Linux only)")
+	noColor := fs.Bool("no-color", false, "turn off ANSI color in terminal output. This flag has no effect on json, csv, or markdown output")
+	showVersion := fs.Bool("version", false, "print the tool version and exit")
+	minLevel := fs.String("min-level", "ok", "show only advice at or above this severity (ok/info/todo/warn/bad/unknown). The summary always counts all advice")
+	sortBy := fs.String("sort", "section", "advice order: section (group by section) or severity (Bad to Unknown)")
+	allDatabases := fs.Bool("all-databases", false, "run per-database checks on every user database. Cluster-wide checks run once")
 
 	if err := fs.Parse(args); err != nil {
-		// flag.ContinueOnError already printed usage to stderr.
 		return 2
 	}
 
@@ -52,22 +49,20 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 
-	// Validate -min-level early so a typo fails before connecting.
+	// Validate flags before connecting so a typo fails fast.
 	min, err := pgtuner.ParseLevel(*minLevel)
 	if err != nil {
 		fmt.Fprintf(stderr, "pgtuner: -min-level: %v\n", err)
 		return 2
 	}
 
-	// Validate -sort early.
 	switch *sortBy {
 	case "section", "severity":
 	default:
-		fmt.Fprintf(stderr, "pgtuner: -sort: invalid value %q (want section or severity)\n", *sortBy)
+		fmt.Fprintf(stderr, "pgtuner: -sort: invalid value %q (use section or severity)\n", *sortBy)
 		return 2
 	}
 
-	// Validate and normalize -format early (case-insensitive; resolve aliases).
 	outFormat := strings.ToLower(*format)
 	switch outFormat {
 	case "text":
@@ -76,11 +71,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		outFormat = "markdown"
 	case "terminal", "json", "csv", "markdown":
 	default:
-		fmt.Fprintf(stderr, "pgtuner: -format: invalid value %q (want terminal, json, csv, or markdown)\n", *format)
+		fmt.Fprintf(stderr, "pgtuner: -format: invalid value %q (use terminal, json, csv, or markdown)\n", *format)
 		return 2
 	}
 
-	// Assemble DSN from parts when -dsn not given but components are provided.
 	effectiveDSN := *dsn
 	if effectiveDSN == "" && (*host != "" || *user != "" || *dbname != "") {
 		effectiveDSN = buildDSN(*user, *host, *port, *dbname)
@@ -97,15 +91,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	// Compute exit code from the FULL advice set before any display filtering.
+	// The exit code comes from the full advice set, before display filtering.
 	exit := rep.ExitCode()
 
-	// Apply severity sort (display ordering) before filtering. The Summary on
-	// the report is untouched by these display transforms.
 	if *sortBy == "severity" {
 		rep.Advice = pgtuner.SortBySeverity(rep.Advice)
 	}
-	// Apply min-level display filter. Summary stays full-cluster truth.
 	rep.Advice = pgtuner.FilterByMinLevel(rep.Advice, min)
 
 	switch outFormat {
@@ -125,9 +116,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 			return 2
 		}
 	default: // terminal
-		// ColorEnabled only works with *os.File; fall back to no-color when
-		// stdout is not a real file (e.g. in tests). -no-color affects only the
-		// terminal renderer.
+		// ColorEnabled needs an *os.File, so other writers (tests) get no color.
 		color := false
 		if !*noColor {
 			if f, ok := stdout.(*os.File); ok {
@@ -143,9 +132,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	return exit
 }
 
-// buildDSN assembles a postgres:// URL from individual flags. Empty parts are
-// omitted; the password is left to PG* env / ~/.pgpass. Returns "" when no
-// parts are given (pgx then uses env/.pgpass entirely).
+// buildDSN assembles a postgres:// URL from the flags and omits empty parts.
+// The password comes from PG* env or ~/.pgpass. It returns "" when no part is given.
 func buildDSN(user, host string, port int, dbname string) string {
 	if user == "" && host == "" && dbname == "" {
 		return ""

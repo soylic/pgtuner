@@ -25,7 +25,6 @@ func TestNoopMemory(t *testing.T) {
 	}
 }
 
-// TestNoopNewMethods verifies all new Inspector methods on NoopInspector return ErrNoOSFacts.
 func TestNoopNewMethods(t *testing.T) {
 	n := NoopInspector{}
 
@@ -46,8 +45,6 @@ func TestNoopNewMethods(t *testing.T) {
 	}
 }
 
-// TestLocalEnvironment verifies Environment() returns a known Kind and a valid
-// cgroup version on this Linux host.
 func TestLocalEnvironment(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("linux only")
@@ -68,8 +65,6 @@ func TestLocalEnvironment(t *testing.T) {
 	}
 }
 
-// TestLocalEffectiveMemoryBytes verifies EffectiveMemoryBytes() returns a
-// positive value on this host.
 func TestLocalEffectiveMemoryBytes(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("linux only")
@@ -83,7 +78,6 @@ func TestLocalEffectiveMemoryBytes(t *testing.T) {
 	}
 }
 
-// TestLocalEffectiveCPUs verifies EffectiveCPUs() returns a positive value.
 func TestLocalEffectiveCPUs(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("linux only")
@@ -97,16 +91,13 @@ func TestLocalEffectiveCPUs(t *testing.T) {
 	}
 }
 
-// TestLocalTransparentHugepages verifies TransparentHugepages() returns a
-// known value or skips if the file is absent (e.g. inside a restricted container).
 func TestLocalTransparentHugepages(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("linux only")
 	}
 	thp, err := LocalInspector{}.TransparentHugepages()
 	if err != nil {
-		// THP file absent (e.g. running inside a container without /sys/kernel/mm
-		// exposed) — not an error condition for this host.
+		// A container may not expose /sys/kernel/mm.
 		t.Skipf("TransparentHugepages() unavailable: %v", err)
 	}
 	valid := map[string]bool{"always": true, "madvise": true, "never": true}
@@ -115,8 +106,6 @@ func TestLocalTransparentHugepages(t *testing.T) {
 	}
 }
 
-// TestLocalStorageDevices verifies StorageDevices() does not error and (on a
-// real Linux system) returns at least one device entry.
 func TestLocalStorageDevices(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("linux only")
@@ -125,7 +114,6 @@ func TestLocalStorageDevices(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StorageDevices() error: %v", err)
 	}
-	// Best-effort: empty is allowed, but on a real host we expect at least one.
-	// Don't fail hard if the device list is empty (e.g. in a restricted container).
+	// An empty list is allowed, for example in a restricted container.
 	t.Logf("StorageDevices() returned %d device(s): %+v", len(devs), devs)
 }

@@ -7,16 +7,11 @@ import (
 	"os"
 	"testing"
 
-	"github.com/OpenRemedy/pgtuner/internal/osinspect"
-	"github.com/OpenRemedy/pgtuner/internal/pg"
-	"github.com/OpenRemedy/pgtuner/pkg/pgtuner"
+	"github.com/soylic/pgtuner/internal/osinspect"
+	"github.com/soylic/pgtuner/internal/pg"
+	"github.com/soylic/pgtuner/pkg/pgtuner"
 )
 
-// TestDefaultRegistryIntegration runs the full Default() registry against a live
-// PG16 instance and verifies that:
-//  1. All 22 checks return at least one advice item.
-//  2. No check produces an Unknown-level result (which would indicate a query
-//     failure or an unhandled error path).
 func TestDefaultRegistryIntegration(t *testing.T) {
 	dsn := os.Getenv("PGTUNER_TEST_DSN")
 	if dsn == "" {
@@ -35,7 +30,6 @@ func TestDefaultRegistryIntegration(t *testing.T) {
 		t.Fatalf("load settings: %v", err)
 	}
 
-	// Detect replication role (best-effort; mirrors what tuner.Analyze does).
 	role, err := pg.DetectRole(ctx, conn)
 	if err != nil {
 		t.Logf("DetectRole failed (non-fatal): %v", err)
@@ -47,14 +41,15 @@ func TestDefaultRegistryIntegration(t *testing.T) {
 		Version:  conn.Version,
 		OS:       osinspect.NoopInspector{},
 		Role:     role,
+		Topology: pg.DetectTopology(ctx, conn, role, settings),
+		Flavor:   pg.DetectFlavor(ctx, conn, settings),
 	}
 
 	registry := Default()
-	if len(registry) != 22 {
-		t.Fatalf("Default() registry has %d checks, want 22", len(registry))
+	if len(registry) != 23 {
+		t.Fatalf("Default() registry has %d checks, want 23", len(registry))
 	}
 
-	// Run all checks and collect advice per section.
 	type result struct {
 		name   string
 		advice []pgtuner.Advice
@@ -66,8 +61,6 @@ func TestDefaultRegistryIntegration(t *testing.T) {
 		results = append(results, result{name: check.Name(), advice: advice})
 	}
 
-	// Validate: every check must return at least one advice item,
-	// and none may be Unknown.
 	t.Logf("=== Default registry results against PG%s ===", conn.Version)
 	for _, r := range results {
 		if len(r.advice) == 0 {

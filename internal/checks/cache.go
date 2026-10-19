@@ -4,41 +4,28 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/OpenRemedy/pgtuner/pkg/pgtuner"
+	"github.com/soylic/pgtuner/pkg/pgtuner"
 )
 
-// docPGStatDatabase is the canonical reference for pg_stat_database columns.
-// src: https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STAT-DATABASE-VIEW
 const docPGStatDatabase = "https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STAT-DATABASE-VIEW"
 
-// docPGStatioUserIndexes is the canonical reference for pg_statio_user_indexes.
-// src: https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STATIO-ALL-INDEXES-VIEW
 const docPGStatioUserIndexes = "https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STATIO-ALL-INDEXES-VIEW"
 
-// docPGStatioUserTables is the canonical reference for pg_statio_user_tables.
-// src: https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STATIO-ALL-TABLES-VIEW
 const docPGStatioUserTables = "https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STATIO-ALL-TABLES-VIEW"
 
-// cacheHitRatioWarnThreshold is the buffer cache hit ratio below which we warn.
-// A ratio below 0.99 (99 %) means more than 1 % of block requests are served
-// from disk rather than the shared-buffer cache. Community guidance and the PG
-// documentation both treat a sustained ratio below 99 % as an indicator that
-// shared_buffers may be undersized for the working set.
+// cacheHitRatioWarnThreshold: below 99 %, more than 1 % of block requests go to
+// disk, which suggests shared_buffers may be undersized for the working set.
 // src: https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STAT-DATABASE-VIEW
 // src: https://www.postgresql.org/docs/current/runtime-config-resource.html#GUC-SHARED-BUFFERS
 const cacheHitRatioWarnThreshold = 0.99 // 99 %
 
-// indexHitRatioInfoThreshold is the index-block hit ratio below which we emit
-// an Info. Index pages that are not in shared_buffers are read from disk on
-// every index scan; a ratio below 0.95 (95 %) is a soft indicator that
-// shared_buffers may not retain the frequently used index pages.
+// indexHitRatioInfoThreshold: below 95 % is a soft sign that shared_buffers
+// does not retain frequently used index pages.
 // src: https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STATIO-ALL-INDEXES-VIEW
 const indexHitRatioInfoThreshold = 0.95 // 95 %
 
-// tableHitRatioInfoThreshold is the heap-block hit ratio below which we emit
-// an Info. Heap (table) pages not found in shared_buffers must be read from
-// disk on every table access; a ratio below 0.95 (95 %) is a soft indicator
-// that frequently-accessed tables may not be staying in shared_buffers.
+// tableHitRatioInfoThreshold: below 95 % is a soft sign that frequently accessed
+// tables do not stay in shared_buffers.
 // src: https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STATIO-ALL-TABLES-VIEW
 const tableHitRatioInfoThreshold = 0.95 // 95 %
 
@@ -47,10 +34,7 @@ type CacheCheck struct{ databaseScoped }
 
 func (CacheCheck) Name() string { return "cache" }
 
-// evalCacheHitRatio is the pure decision function for buffer-cache hit-ratio
-// advice. It accepts pre-fetched blks_hit and blks_read from pg_stat_database
-// and returns advice without touching the database.
-//
+// evalCacheHitRatio turns blks_hit and blks_read from pg_stat_database into advice.
 // src: https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STAT-DATABASE-VIEW
 func evalCacheHitRatio(blksHit, blksRead int64) []pgtuner.Advice {
 	const section = "Cache"
@@ -72,32 +56,28 @@ func evalCacheHitRatio(blksHit, blksRead int64) []pgtuner.Advice {
 			Level:   pgtuner.Warn,
 			Section: section,
 			Title:   "Buffer cache hit ratio is low",
-			Message: fmt.Sprintf("Buffer cache hit ratio is %.2f%% (blks_hit=%d, blks_read=%d). Requests served from disk rather than shared_buffers exceed 1%%, which may indicate shared_buffers is undersized for the working set or that the working set is too large to cache.", ratio*100, blksHit, blksRead),
-			Detail:  "Consider increasing shared_buffers (commonly 25–40% of RAM for a dedicated PG host) or review query access patterns to reduce the effective working set.",
+			Message: fmt.Sprintf("Buffer cache hit ratio is %.2f%% (blks_hit=%d, blks_read=%d). Requests served from disk instead of shared_buffers exceed 1%%. This may indicate that shared_buffers is undersized for the working set, or that the working set is too large to cache.", ratio*100, blksHit, blksRead),
+			Detail:  "Consider increasing shared_buffers (commonly 25–40% of RAM for a dedicated PG host). Or review query access patterns to reduce the effective working set.",
 			DocRef:  docPGStatDatabase,
 		}}
 	}
 	return nil
 }
 
-// evalIndexHitRatio is the pure decision function for index-block cache hit
-// advice. It accepts nullable SUM(idx_blks_hit) and SUM(idx_blks_read) from
-// pg_statio_user_indexes and returns advice without touching the database.
-// Both inputs are pointers so that a NULL result from SUM over an empty table
-// set can be represented and handled gracefully (NULL SUM → no indexes → no advice).
-//
+// evalIndexHitRatio takes SUM(idx_blks_hit) and SUM(idx_blks_read) from
+// pg_statio_user_indexes. The inputs are pointers because SUM is NULL when no
+// user indexes exist, which yields no advice.
 // src: https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STATIO-ALL-INDEXES-VIEW
 func evalIndexHitRatio(idxHit, idxRead *int64) []pgtuner.Advice {
 	const section = "Cache"
 
-	// NULL SUM means there are no user indexes to measure; skip.
 	if idxHit == nil || idxRead == nil {
 		return nil
 	}
 
 	total := *idxHit + *idxRead
 	if total == 0 {
-		// Indexes exist but have never been accessed since stats reset; skip.
+		// Indexes exist but nothing accessed them since the stats reset.
 		return nil
 	}
 
@@ -107,32 +87,28 @@ func evalIndexHitRatio(idxHit, idxRead *int64) []pgtuner.Advice {
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "Index block cache hit ratio is low",
-			Message: fmt.Sprintf("Index-block cache hit ratio is %.2f%% (idx_blks_hit=%d, idx_blks_read=%d). More than 5%% of index-page requests are satisfied from disk; frequently used index pages may not be retained in shared_buffers.", ratio*100, *idxHit, *idxRead),
-			Detail:  "Increasing shared_buffers allows more index pages to stay in cache. Consider also reviewing which indexes are heavily accessed via pg_stat_user_indexes.",
+			Message: fmt.Sprintf("Index-block cache hit ratio is %.2f%% (idx_blks_hit=%d, idx_blks_read=%d). Disk serves more than 5%% of index-page requests. Frequently used index pages may not stay in shared_buffers.", ratio*100, *idxHit, *idxRead),
+			Detail:  "Increasing shared_buffers allows more index pages to stay in cache. Consider also checking pg_stat_user_indexes to see which indexes have heavy access.",
 			DocRef:  docPGStatioUserIndexes,
 		}}
 	}
 	return nil
 }
 
-// evalTableHitRatio is the pure decision function for heap-block (table) cache
-// hit advice. It accepts nullable SUM(heap_blks_hit) and SUM(heap_blks_read)
-// from pg_statio_user_tables and returns advice without touching the database.
-// Both inputs are pointers so that a NULL result from SUM over an empty table
-// set can be represented and handled gracefully (NULL SUM → no tables → no advice).
-//
+// evalTableHitRatio takes SUM(heap_blks_hit) and SUM(heap_blks_read) from
+// pg_statio_user_tables. The inputs are pointers because SUM is NULL when no
+// user tables exist, which yields no advice.
 // src: https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STATIO-ALL-TABLES-VIEW
 func evalTableHitRatio(heapHit, heapRead *int64) []pgtuner.Advice {
 	const section = "Cache"
 
-	// NULL SUM means there are no user tables to measure; skip.
 	if heapHit == nil || heapRead == nil {
 		return nil
 	}
 
 	total := *heapHit + *heapRead
 	if total == 0 {
-		// Tables exist but have never been accessed since stats reset; skip.
+		// Tables exist but nothing accessed them since the stats reset.
 		return nil
 	}
 
@@ -142,25 +118,22 @@ func evalTableHitRatio(heapHit, heapRead *int64) []pgtuner.Advice {
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "Table block cache hit ratio is low",
-			Message: fmt.Sprintf("Table cache hit ratio is %.2f%% (heap_blks_hit=%d, heap_blks_read=%d). More than 5%% of table-page requests are satisfied from disk; frequently-accessed tables may not be staying in shared_buffers.", ratio*100, *heapHit, *heapRead),
-			Detail:  "Increasing shared_buffers allows more table pages to stay in cache. Consider also reviewing which tables are heavily accessed via pg_statio_user_tables.",
+			Message: fmt.Sprintf("Table cache hit ratio is %.2f%% (heap_blks_hit=%d, heap_blks_read=%d). Disk serves more than 5%% of table-page requests. Frequently accessed tables may not stay in shared_buffers.", ratio*100, *heapHit, *heapRead),
+			Detail:  "Increasing shared_buffers allows more table pages to stay in cache. Consider also checking pg_statio_user_tables to see which tables have heavy access.",
 			DocRef:  docPGStatioUserTables,
 		}}
 	}
 	return nil
 }
 
-// Run queries buffer-cache and index-block hit ratios and returns advice.
-// On query or scan failure it returns a single Unknown-level advice for the
-// failing sub-check; the other sub-check still runs.
+// Run queries the three hit ratios. A query or scan failure yields one Unknown
+// advice for that sub-check and the others still run.
 // It never panics and never returns an error.
 func (CacheCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 	const section = "Cache"
 	var out []pgtuner.Advice
 
-	// --- buffer cache (pg_stat_database) ----------------------------------------
-	// blks_hit: disk-block requests served from shared_buffers.
-	// blks_read: disk-block requests that required a physical read.
+	// blks_hit: requests served from shared_buffers. blks_read: requests that needed a physical read.
 	// src: https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STAT-DATABASE-VIEW
 	const bufSQL = "SELECT blks_hit, blks_read FROM pg_stat_database WHERE datname = current_database()"
 	var blksHit, blksRead int64
@@ -175,8 +148,7 @@ func (CacheCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 		out = append(out, evalCacheHitRatio(blksHit, blksRead)...)
 	}
 
-	// --- index hit ratio (pg_statio_user_indexes) --------------------------------
-	// SUM returns NULL when no user indexes exist; use *int64 pointers to detect this.
+	// SUM returns NULL when no user indexes exist, hence the pointers.
 	// src: https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STATIO-ALL-INDEXES-VIEW
 	const idxSQL = "SELECT SUM(idx_blks_hit), SUM(idx_blks_read) FROM pg_statio_user_indexes"
 	var idxHit, idxRead *int64
@@ -191,8 +163,7 @@ func (CacheCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 		out = append(out, evalIndexHitRatio(idxHit, idxRead)...)
 	}
 
-	// --- table hit ratio (pg_statio_user_tables) ---------------------------------
-	// SUM returns NULL when no user tables exist; use *int64 pointers to detect this.
+	// SUM returns NULL when no user tables exist, hence the pointers.
 	// src: https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STATIO-ALL-TABLES-VIEW
 	const tblSQL = "SELECT SUM(heap_blks_hit), SUM(heap_blks_read) FROM pg_statio_user_tables"
 	var heapHit, heapRead *int64
@@ -206,10 +177,6 @@ func (CacheCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 	} else {
 		out = append(out, evalTableHitRatio(heapHit, heapRead)...)
 	}
-
-	// Version-check note: pg_stat_database, pg_statio_user_indexes, and
-	// pg_statio_user_tables exist in all supported PG versions; no version
-	// branching needed.
 
 	if len(out) == 0 {
 		out = append(out, pgtuner.Advice{

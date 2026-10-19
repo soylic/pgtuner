@@ -7,9 +7,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/OpenRemedy/pgtuner/internal/osinspect"
-	"github.com/OpenRemedy/pgtuner/internal/pg"
-	"github.com/OpenRemedy/pgtuner/pkg/pgtuner"
+	"github.com/soylic/pgtuner/internal/osinspect"
+	"github.com/soylic/pgtuner/internal/pg"
+	"github.com/soylic/pgtuner/pkg/pgtuner"
 )
 
 // TestConfigIntegration runs ConfigCheck against the live dev DB and asserts no
@@ -52,7 +52,7 @@ func TestConfigIntegration(t *testing.T) {
 	}
 
 	for _, a := range got {
-		t.Logf("[%s] %s — %s", a.Level, a.Section, a.Title)
+		t.Logf("[%s] %s: %s", a.Level, a.Section, a.Title)
 		if a.Section != configSection {
 			t.Errorf("advice in wrong section %q: %+v", a.Section, a)
 		}

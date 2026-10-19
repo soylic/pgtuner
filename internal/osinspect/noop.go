@@ -1,6 +1,6 @@
 package osinspect
 
-// NoopInspector reports no OS facts. Used when pgtuner cannot inspect the host.
+// NoopInspector reports no OS facts. pgtuner uses it when it cannot inspect the host.
 type NoopInspector struct{}
 
 func (NoopInspector) Memory() (Memory, error)       { return Memory{}, ErrNoOSFacts }

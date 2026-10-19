@@ -3,11 +3,9 @@ package checks
 import (
 	"testing"
 
-	"github.com/OpenRemedy/pgtuner/internal/pg"
-	"github.com/OpenRemedy/pgtuner/pkg/pgtuner"
+	"github.com/soylic/pgtuner/internal/pg"
+	"github.com/soylic/pgtuner/pkg/pgtuner"
 )
-
-// --- checkpointQuery version-branch unit tests --------------------------------
 
 // TestCheckpointQueryPG16: PG16 → bgwriter SQL.
 func TestCheckpointQueryPG16(t *testing.T) {
@@ -40,8 +38,6 @@ func TestCheckpointQueryPG18(t *testing.T) {
 		t.Fatalf("PG18 expected checkpointer query, got: %q", q)
 	}
 }
-
-// --- evalCheckpoints unit tests -----------------------------------------------
 
 // TestEvalCheckpointsZeroActivity: no checkpoints → Info.
 func TestEvalCheckpointsZeroActivity(t *testing.T) {
@@ -99,7 +95,7 @@ func TestEvalCheckpointsHighRequestedAndLowTarget(t *testing.T) {
 
 // TestEvalCheckpointsHealthy: good counters + 0.9 target → OK.
 func TestEvalCheckpointsHealthy(t *testing.T) {
-	// 1 requested out of 100 total = 1% — well under threshold.
+	// 1 requested out of 100 total = 1%, well under threshold.
 	got := evalCheckpoints(99, 1, 0.9)
 	if !hasLevel(got, pgtuner.OK) {
 		t.Fatalf("expected OK for healthy checkpoint stats, got %v", levelsOf(got))

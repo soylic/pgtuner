@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OpenRemedy/pgtuner/pkg/pgtuner"
+	"github.com/soylic/pgtuner/pkg/pgtuner"
 )
 
 func makeTestReport() *pgtuner.Report {
@@ -42,16 +42,16 @@ func TestWriteTerminalPlain(t *testing.T) {
 		t.Fatalf("WriteTerminal: %v", err)
 	}
 
-	const want = `PostgreSQL Tuning Report — server 16.2
+	const want = `PostgreSQL Tuning Report, server 16.2
 
 === memory ===
-  [warn]  shared_buffers low — shared_buffers is below 25% of RAM.
+  [warn]  shared_buffers low: shared_buffers is below 25% of RAM.
           Detail: Current value is 128MB.
           Ref:    https://www.postgresql.org/docs/current/runtime-config-resource.html
-  [info]  work_mem default — work_mem is at default.
+  [info]  work_mem default: work_mem is at default.
 
 === security ===
-  [ok]    ssl enabled — SSL is enabled.
+  [ok]    ssl enabled: SSL is enabled.
 
 Summary:  1 ok  1 info  0 todo  1 warn  0 bad  0 unknown   Grade: A
 `
@@ -80,8 +80,6 @@ func TestWriteTerminalSeveritySort(t *testing.T) {
 	}
 }
 
-// TestWriteTerminalSeveritySortDedupesSection verifies the "(section)" label is
-// printed only when the section changes between consecutive items.
 func TestWriteTerminalSeveritySortDedupesSection(t *testing.T) {
 	advice := []pgtuner.Advice{
 		{Level: pgtuner.Bad, Section: "wal", Title: "fsync off", Message: "dangerous"},
@@ -105,9 +103,7 @@ func TestWriteTerminalSeveritySortDedupesSection(t *testing.T) {
 
 func TestColorEnabledNoColor(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
-	// NO_COLOR must take precedence over everything else.
-	// os.Stdout is not a terminal in test/CI environments, but we are
-	// specifically exercising the NO_COLOR early-return path.
+	// NO_COLOR takes precedence. This exercises its early return.
 	if ColorEnabled(os.Stdout) {
 		t.Error("ColorEnabled: expected false when NO_COLOR is set")
 	}
@@ -120,7 +116,6 @@ func TestColorEnabledNonTerminal(t *testing.T) {
 	}
 	defer r.Close()
 	defer w.Close()
-	// Ensure NO_COLOR is unset so the terminal check is what decides.
 	t.Setenv("NO_COLOR", "")
 	os.Unsetenv("NO_COLOR")
 	if ColorEnabled(w) {

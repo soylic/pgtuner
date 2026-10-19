@@ -4,47 +4,36 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/OpenRemedy/pgtuner/internal/osinspect"
-	"github.com/OpenRemedy/pgtuner/pkg/pgtuner"
+	"github.com/soylic/pgtuner/internal/osinspect"
+	"github.com/soylic/pgtuner/pkg/pgtuner"
 )
 
-// docHugePages is the canonical reference for huge pages on Linux.
-// src: https://www.postgresql.org/docs/current/kernel-resources.html#LINUX-HUGE-PAGES
 const docHugePages = "https://www.postgresql.org/docs/current/kernel-resources.html#LINUX-HUGE-PAGES"
 
-// HugePagesCheck evaluates whether huge pages are correctly sized for
-// PostgreSQL's shared memory area.
+// HugePagesCheck evaluates whether huge pages fit PostgreSQL's shared memory area.
 type HugePagesCheck struct{ clusterScoped }
 
 func (HugePagesCheck) Name() string { return "hugepages" }
 
-// Run checks huge-pages configuration. It never panics and never returns
-// an error. When OS facts are unavailable it emits Info rather than skipping.
+// Run emits Info when OS facts are unavailable. It never panics and never returns an error.
 func (HugePagesCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 	const section = "Huge Pages"
 	var out []pgtuner.Advice
 
-	// --- huge_pages GUC -------------------------------------------------------
-	// huge_pages = "try" means PostgreSQL will silently fall back to no huge
-	// pages if the allocation fails; operators may not notice the fallback.
-	// "on" makes failure explicit at startup.
+	// "try" falls back to regular pages silently. "on" fails at startup instead.
 	// src: https://www.postgresql.org/docs/current/runtime-config-resource.html#GUC-HUGE-PAGES
 	if hp, ok := p.Settings.Get("huge_pages"); ok && hp == "try" {
 		out = append(out, pgtuner.Advice{
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "huge_pages=try may silently disable huge pages",
-			Message: "huge_pages is set to 'try'; PostgreSQL will fall back to regular pages without error if huge pages are unavailable. Set to 'on' (once sizing is confirmed correct) to make failures visible at startup.",
+			Message: "huge_pages is set to 'try'. If huge pages are unavailable, PostgreSQL falls back to regular pages without error. Set it to 'on' (once sizing is confirmed correct) to make failures visible at startup.",
 			DocRef:  docHugePages,
 		})
 	}
 
-	// --- container environment note -------------------------------------------
-	// vm.nr_hugepages is a host-wide kernel parameter. Inside an unprivileged
-	// container (Docker, Kubernetes, LXC) it cannot be changed — the operator
-	// must configure huge pages on the container host or Kubernetes node instead.
-	// Emit an Info so the reader knows where to look when the advice below shows
-	// "insufficient huge pages".
+	// vm.nr_hugepages is host-wide. An unprivileged container (Docker, Kubernetes, LXC)
+	// cannot change it, so this Info points the reader to the host or node.
 	// src: https://www.postgresql.org/docs/current/kernel-resources.html#LINUX-HUGE-PAGES
 	// src: https://docs.kernel.org/admin-guide/mm/hugetlbpage.html (host-global)
 	if env, envErr := p.OS.Environment(); envErr == nil {
@@ -53,48 +42,44 @@ func (HugePagesCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 			out = append(out, pgtuner.Advice{
 				Level:   pgtuner.Info,
 				Section: section,
-				Title:   "vm.nr_hugepages is host-global — configure on the host/node",
-				Message: fmt.Sprintf("Running inside a %s container: vm.nr_hugepages is a host-global kernel parameter and usually cannot be set from inside an unprivileged container. Configure huge pages on the container host (or Kubernetes node) rather than inside this container.", env.Kind),
+				Title:   "vm.nr_hugepages is host-global: configure on the host/node",
+				Message: fmt.Sprintf("Running inside a %s container. vm.nr_hugepages is a host-global kernel parameter. You usually cannot set it from inside an unprivileged container. Configure huge pages on the container host (or Kubernetes node) instead of inside this container.", env.Kind),
 				DocRef:  docHugePages,
 			})
 		}
 	}
-	// Degrade gracefully when Environment() errors: skip this sub-check.
+	// An Environment() error skips the container note.
 
-	// --- check whether enough huge pages are allocated -----------------------
 	mem, err := p.OS.Memory()
 	if err == osinspect.ErrNoOSFacts {
 		out = append(out, pgtuner.Advice{
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "Cannot verify huge pages without host access",
-			Message: "OS inspector is not available; run pgtuner with a local OS inspector to verify vm.nr_hugepages is sufficient for PostgreSQL's shared memory area.",
+			Message: "OS inspector is not available. Run pgtuner with a local OS inspector to verify that vm.nr_hugepages is sufficient for PostgreSQL's shared memory area.",
 			DocRef:  docHugePages,
 		})
 		return out
 	}
 
 	if mem.HugePageSize == 0 {
-		// No huge pages configured on the kernel side; nothing to verify.
 		if len(out) == 0 {
 			out = append(out, pgtuner.Advice{
 				Level:   pgtuner.OK,
 				Section: section,
 				Title:   "Huge pages not in use",
-				Message: "HugePageSize=0 reported by OS; huge pages are not configured. No action needed unless you wish to enable them.",
+				Message: "HugePageSize=0 reported by OS. Huge pages are not configured. No action is needed unless you want to enable them.",
 				DocRef:  docHugePages,
 			})
 		}
 		return out
 	}
 
-	// Determine how many huge pages PostgreSQL needs.
 	var neededPages int64
 	var neededSource string
 
 	if p.Version.AtLeast(15, 0) {
-		// PG15+ exposes shared_memory_size_in_huge_pages: an exact count of huge
-		// pages needed for the shared memory segment.
+		// PG15+ exposes the exact count in shared_memory_size_in_huge_pages.
 		// src: https://www.postgresql.org/docs/15/runtime-config-preset.html
 		n, ok := p.Settings.Int("shared_memory_size_in_huge_pages")
 		if ok && n > 0 {
@@ -102,9 +87,7 @@ func (HugePagesCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 			neededSource = "shared_memory_size_in_huge_pages GUC"
 		}
 	} else {
-		// PG < 15: estimate from shared_buffers (8kB blocks → bytes) divided by
-		// HugePageSize. This underestimates total shared memory (which also
-		// includes lock tables, WAL buffers, etc.) but is a reasonable floor.
+		// PG<15: shared_buffers / HugePageSize is a floor. It ignores lock tables, WAL buffers, etc.
 		// src: https://www.postgresql.org/docs/current/kernel-resources.html#LINUX-HUGE-PAGES
 		sbBlocks, ok := p.Settings.Int("shared_buffers")
 		if ok && sbBlocks > 0 {
@@ -119,7 +102,7 @@ func (HugePagesCheck) Run(_ context.Context, p *Probe) []pgtuner.Advice {
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "Insufficient huge pages configured",
-			Message: fmt.Sprintf("PostgreSQL needs %d huge pages (from %s) but vm.nr_hugepages=%d. PostgreSQL will fall back to regular pages, forfeiting TLB performance benefits.", neededPages, neededSource, mem.HugePagesTotal),
+			Message: fmt.Sprintf("PostgreSQL needs %d huge pages (from %s) but vm.nr_hugepages=%d. PostgreSQL will fall back to regular pages. This forfeits the TLB performance benefits.", neededPages, neededSource, mem.HugePagesTotal),
 			Detail:  fmt.Sprintf("Set vm.nr_hugepages >= %d in /etc/sysctl.conf and run sysctl -p. Add some headroom (e.g. +10%%) for kernel and other uses.", neededPages),
 			DocRef:  docHugePages,
 		})

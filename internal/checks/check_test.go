@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/OpenRemedy/pgtuner/internal/osinspect"
-	"github.com/OpenRemedy/pgtuner/pkg/pgtuner"
+	"github.com/soylic/pgtuner/internal/osinspect"
+	"github.com/soylic/pgtuner/pkg/pgtuner"
 )
 
 type stubCheck struct {

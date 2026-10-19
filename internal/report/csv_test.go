@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/OpenRemedy/pgtuner/pkg/pgtuner"
+	"github.com/soylic/pgtuner/pkg/pgtuner"
 )
 
 func TestWriteCSV(t *testing.T) {

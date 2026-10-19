@@ -4,17 +4,12 @@ import (
 	"encoding/csv"
 	"io"
 
-	"github.com/OpenRemedy/pgtuner/pkg/pgtuner"
+	"github.com/soylic/pgtuner/pkg/pgtuner"
 )
 
-// WriteCSV writes the report's advice as CSV to w. The header row is
-// database,section,level,title,message,detail,doc_ref and there is one row per
-// advice item in r.Advice, preserving the caller's order (the caller is
-// expected to have already applied any sort/min-level filtering).
-//
-// The grade and per-level summary are intentionally NOT included: CSV output is
-// a clean, importable table of findings. Read the grade/summary from the JSON
-// or terminal renderer when those are needed.
+// WriteCSV writes one row per advice item in r.Advice order, after a header row
+// database,section,level,title,message,detail,doc_ref. The grade and summary are
+// not included. Use the JSON or terminal output to get them.
 func WriteCSV(w io.Writer, r *pgtuner.Report) error {
 	cw := csv.NewWriter(w)
 	if err := cw.Write([]string{"database", "section", "level", "title", "message", "detail", "doc_ref"}); err != nil {

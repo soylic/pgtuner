@@ -13,8 +13,7 @@ type ServerVersion struct {
 	Minor int
 }
 
-// ParseServerVersionNum parses a server_version_num string (e.g. "170004") into
-// a ServerVersion.
+// ParseServerVersionNum parses a server_version_num string such as "170004".
 func ParseServerVersionNum(num string) (ServerVersion, error) {
 	n, err := strconv.Atoi(num)
 	if err != nil {

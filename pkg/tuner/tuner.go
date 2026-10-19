@@ -1,5 +1,4 @@
-// Package tuner orchestrates a full tuning analysis: connect, snapshot
-// settings, run all checks, and assemble a Report.
+// Package tuner runs a full tuning analysis and returns a Report.
 package tuner
 
 import (
@@ -8,10 +7,10 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/OpenRemedy/pgtuner/internal/checks"
-	"github.com/OpenRemedy/pgtuner/internal/osinspect"
-	"github.com/OpenRemedy/pgtuner/internal/pg"
-	"github.com/OpenRemedy/pgtuner/pkg/pgtuner"
+	"github.com/soylic/pgtuner/internal/checks"
+	"github.com/soylic/pgtuner/internal/osinspect"
+	"github.com/soylic/pgtuner/internal/pg"
+	"github.com/soylic/pgtuner/pkg/pgtuner"
 )
 
 // Analyze connects to PostgreSQL, runs all checks, and returns a Report.
@@ -32,10 +31,12 @@ func Analyze(ctx context.Context, o pgtuner.Options) (*pgtuner.Report, error) {
 		inspector = osinspect.LocalInspector{}
 	}
 
-	// Detect replication role (best-effort; on error keep RoleUnknown and continue).
+	// Best effort: on error the role stays RoleUnknown.
 	// src: https://www.postgresql.org/docs/current/functions-admin.html (pg_is_in_recovery)
 	// src: https://www.postgresql.org/docs/current/monitoring-stats.html (pg_stat_replication)
 	role, _ := pg.DetectRole(ctx, conn)
+	topology := pg.DetectTopology(ctx, conn, role, settings)
+	flavor := pg.DetectFlavor(ctx, conn, settings)
 
 	baseProbe := &checks.Probe{
 		Conn:     conn,
@@ -44,16 +45,16 @@ func Analyze(ctx context.Context, o pgtuner.Options) (*pgtuner.Report, error) {
 		OS:       inspector,
 		Now:      o.Now,
 		Role:     role,
+		Topology: topology,
+		Flavor:   flavor,
 	}
 
 	if !o.AllDatabases {
 		advice := checks.Default().RunAll(ctx, baseProbe)
-		return pgtuner.NewReport(conn.Version.String(), advice), nil
+		return withContext(pgtuner.NewReport(conn.Version.String(), advice), topology, flavor), nil
 	}
 
-	// -all-databases: cluster-wide checks run once against the connection
-	// database; per-database checks run once per user database, each over its
-	// own connection, with their advice tagged with the database name.
+	// Cluster-wide checks run once. Per-database checks run on each user database over its own connection.
 	advice := checks.ClusterWide().RunAll(ctx, baseProbe)
 
 	dbNames, err := pg.ListUserDatabases(ctx, conn)
@@ -65,35 +66,37 @@ func Analyze(ctx context.Context, o pgtuner.Options) (*pgtuner.Report, error) {
 	for _, db := range dbNames {
 		dbAdvice, err := analyzeDatabase(ctx, o.DSN, db, inspector, o.Now, role, perDB)
 		if err != nil {
-			// Surface the failure as an Unknown rather than aborting the whole
-			// run; other databases still get analyzed.
+			// Report an Unknown so the other databases still get analyzed.
 			advice = append(advice, dbFailureAdvice(db, err))
 			continue
 		}
 		advice = append(advice, dbAdvice...)
 	}
 
-	rep := pgtuner.NewReport(conn.Version.String(), advice)
+	rep := withContext(pgtuner.NewReport(conn.Version.String(), advice), topology, flavor)
 	rep.Databases = dbNames
 	return rep, nil
 }
 
-// dbFailureAdvice builds the tagged Unknown advice emitted when a per-database
-// analysis fails to connect or load its settings. Surfacing the failure as an
-// Unknown (rather than erroring) lets the remaining databases still be analyzed
-// and keeps the failed database visible and attributed in the report.
+// withContext attaches the topology and flavor to the report.
+func withContext(r *pgtuner.Report, t pgtuner.Topology, f pgtuner.Flavor) *pgtuner.Report {
+	r.Topology = &t
+	r.Flavor = &f
+	return r
+}
+
+// dbFailureAdvice builds the Unknown advice for a database that failed to connect or load settings.
 func dbFailureAdvice(db string, err error) pgtuner.Advice {
 	return pgtuner.Advice{
 		Level:    pgtuner.Unknown,
 		Section:  "Per-Database",
 		Title:    "Database analysis failed",
-		Message:  fmt.Sprintf("Could not analyze database %q: %v", db, err),
+		Message:  fmt.Sprintf("Cannot analyze database %q: %v", db, err),
 		Database: db,
 	}
 }
 
-// analyzeDatabase connects to a single database and runs the per-database
-// registry against it, tagging every resulting advice with the database name.
+// analyzeDatabase runs the per-database registry on one database and tags the advice with its name.
 func analyzeDatabase(ctx context.Context, dsn, db string, inspector osinspect.Inspector, now time.Time, role pg.Role, perDB checks.Registry) ([]pgtuner.Advice, error) {
 	dbConn, err := pg.ConnectDB(ctx, dsn, db)
 	if err != nil {

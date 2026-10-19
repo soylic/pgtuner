@@ -5,75 +5,57 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/OpenRemedy/pgtuner/pkg/pgtuner"
+	"github.com/soylic/pgtuner/pkg/pgtuner"
 )
 
-// docPGStatUserIndexes is the canonical reference for pg_stat_user_indexes.
 // src: https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STAT-ALL-INDEXES-VIEW
 const docPGStatUserIndexes = "https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STAT-ALL-INDEXES-VIEW"
 
-// docPGIndex is the canonical reference for the pg_index catalog.
 // src: https://www.postgresql.org/docs/current/catalog-pg-index.html
 const docPGIndex = "https://www.postgresql.org/docs/current/catalog-pg-index.html"
 
-// docCreateIndexConcurrently is the canonical reference for CREATE INDEX CONCURRENTLY
-// and the indisvalid/indisready columns.
+// docCreateIndexConcurrently documents CREATE INDEX CONCURRENTLY and the indisvalid/indisready columns.
 // src: https://www.postgresql.org/docs/current/sql-createindex.html
 const docCreateIndexConcurrently = "https://www.postgresql.org/docs/current/sql-createindex.html"
 
-// docDDLConstraints is the canonical reference for table constraints, PKs and FKs.
 // src: https://www.postgresql.org/docs/current/ddl-constraints.html
 const docDDLConstraints = "https://www.postgresql.org/docs/current/ddl-constraints.html"
 
-// docSchemaStatAllTables is the canonical reference for pg_stat_all_tables columns.
 // src: https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STAT-ALL-TABLES-VIEW
 const docSchemaStatAllTables = "https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STAT-ALL-TABLES-VIEW"
 
-// docObjectSizeFunctions is the canonical reference for database-object size functions.
 // src: https://www.postgresql.org/docs/current/functions-admin.html#FUNCTIONS-ADMIN-DBOBJECT
 const docObjectSizeFunctions = "https://www.postgresql.org/docs/current/functions-admin.html#FUNCTIONS-ADMIN-DBOBJECT"
 
-// schemaSection is the section name emitted for all SchemaCheck advice items.
 const schemaSection = "Schema"
 
-// unusedIndexSizeThreshold is the minimum index size (1 MiB) below which we skip
-// reporting a zero-scan index; tiny indexes are cheap to retain and may have been
-// recently created.
+// unusedIndexSizeThreshold is the minimum size (1 MiB) for reporting a zero-scan index.
+// Tiny indexes are cheap to keep and may be new.
 // src: https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STAT-ALL-INDEXES-VIEW
 const unusedIndexSizeThreshold int64 = 1 * 1024 * 1024 // 1 MiB
 
-// noPKSizeThreshold is the minimum table size (1 MiB) above which we flag tables
-// without a primary key.  Very small tables are often lookup/config tables where
-// the omission is intentional.
+// noPKSizeThreshold is the minimum table size (1 MiB) for flagging a missing primary key.
+// Very small lookup or config tables often omit it on purpose.
 // src: https://www.postgresql.org/docs/current/ddl-constraints.html
 const noPKSizeThreshold int64 = 1 * 1024 * 1024 // 1 MiB
 
-// bloatDeadRatioThreshold is the fraction of dead tuples vs total tuples above
-// which we consider a table to have high bloat. 0.20 (20 %) is the default
-// autovacuum scale factor; tables that autovacuum hasn't caught up with appear here.
-// This is a simple heuristic from standard catalog columns, not pgstattuple.
+// bloatDeadRatioThreshold is the dead-tuple fraction above which a table has high bloat.
+// 0.20 equals the default autovacuum scale factor. This is a heuristic from catalog columns, not pgstattuple.
 // src: https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STAT-ALL-TABLES-VIEW
 const bloatDeadRatioThreshold = 0.20
 
-// bloatSizeThreshold is the minimum table size (1 MiB) below which we skip the
-// bloat warning; bloat on tiny tables is inconsequential.
+// bloatSizeThreshold is the minimum table size (1 MiB) for a bloat warning.
 // src: https://www.postgresql.org/docs/current/functions-admin.html#FUNCTIONS-ADMIN-DBOBJECT
 const bloatSizeThreshold int64 = 1 * 1024 * 1024 // 1 MiB
 
-// neverAnalyzedLiveTupThreshold is the minimum n_live_tup count above which we flag
-// a table that has never been analyzed or vacuumed.  Empty/tiny tables have no stats
-// impact.
+// neverAnalyzedLiveTupThreshold is the minimum n_live_tup for flagging a never-analyzed table.
 // src: https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STAT-ALL-TABLES-VIEW
 const neverAnalyzedLiveTupThreshold int64 = 10_000
 
-// schemaMessageCap is the maximum number of object names to include in a single
-// advice message, to keep output readable.
+// schemaMessageCap is the maximum number of object names in one advice message.
 const schemaMessageCap = 10
 
-// largestRelationsN is the number of top-N largest user tables to report.
 const largestRelationsN = 10
-
-// ----- schema data types used by pure eval functions -------------------------
 
 // UnusedIndexRow holds one row from the unused-index query.
 type UnusedIndexRow struct {
@@ -105,8 +87,8 @@ type NoPKRow struct {
 
 // FKNoIndexRow holds one row from the FK-without-index query.
 type FKNoIndexRow struct {
-	SchemaName string
-	RelName    string
+	SchemaName     string
+	RelName        string
 	ConstraintName string
 }
 
@@ -134,10 +116,7 @@ type LargestRelRow struct {
 	TotalBytes int64
 }
 
-// ----- pure eval functions ---------------------------------------------------
-
-// evalUnusedIndexes returns Info advice for non-unique user indexes with zero
-// scans and size > threshold. Note: stats may be reset; message includes caveat.
+// evalUnusedIndexes returns Info advice for non-unique user indexes with zero scans and size above the threshold.
 // src: https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STAT-ALL-INDEXES-VIEW
 // src: https://www.postgresql.org/docs/current/catalog-pg-index.html
 func evalUnusedIndexes(rows []UnusedIndexRow) []pgtuner.Advice {
@@ -156,16 +135,15 @@ func evalUnusedIndexes(rows []UnusedIndexRow) []pgtuner.Advice {
 		Level:   pgtuner.Info,
 		Section: schemaSection,
 		Title:   fmt.Sprintf("Unused indexes detected (%d)", len(rows)),
-		Message: fmt.Sprintf("%d non-unique index(es) have idx_scan=0 and size > 1 MiB since the last statistics reset: %s%s. These are candidates for removal if the workload does not require them.",
+		Message: fmt.Sprintf("%d non-unique index(es) have idx_scan=0 and size > 1 MiB since the last statistics reset: %s%s. These are candidates for removal if the workload does not need them.",
 			len(rows), strings.Join(capped, ", "), suffix),
-		Detail: "Verify these indexes are not needed (e.g. recently created, or stats reset recently) then drop with DROP INDEX CONCURRENTLY. Check pg_stat_user_indexes.idx_scan for current counts.",
+		Detail: "Make sure these indexes are not needed (for example new indexes, or a recent statistics reset). Then drop them with DROP INDEX CONCURRENTLY. Check pg_stat_user_indexes.idx_scan for the current counts.",
 		DocRef: docPGStatUserIndexes,
 	}}
 }
 
 // evalInvalidIndexes returns Warn advice for indexes that are not valid or not ready.
-// Such indexes waste space and are never used by the query planner; they result from
-// a failed CREATE INDEX CONCURRENTLY build.
+// They come from a failed CREATE INDEX CONCURRENTLY and the planner never uses them.
 // src: https://www.postgresql.org/docs/current/sql-createindex.html
 // src: https://www.postgresql.org/docs/current/catalog-pg-index.html
 func evalInvalidIndexes(rows []InvalidIndexRow) []pgtuner.Advice {
@@ -183,15 +161,14 @@ func evalInvalidIndexes(rows []InvalidIndexRow) []pgtuner.Advice {
 		Level:   pgtuner.Warn,
 		Section: schemaSection,
 		Title:   fmt.Sprintf("Invalid index(es) detected (%d)", len(rows)),
-		Message: fmt.Sprintf("%d index(es) have indisvalid=false or indisready=false in pg_index: %s%s. These indexes were not successfully built (typically from a failed CREATE INDEX CONCURRENTLY) and are not used by the query planner. They consume disk space and must be rebuilt.",
+		Message: fmt.Sprintf("%d index(es) have indisvalid=false or indisready=false in pg_index: %s%s. The build of these indexes did not succeed (typically from a failed CREATE INDEX CONCURRENTLY). The query planner does not use them. They use disk space and must be rebuilt.",
 			len(rows), strings.Join(capped, ", "), suffix),
-		Detail: "Drop the invalid index with DROP INDEX CONCURRENTLY and then recreate it: CREATE INDEX CONCURRENTLY ... Monitor pg_index.indisvalid after creation to confirm success.",
+		Detail: "Drop the invalid index with DROP INDEX CONCURRENTLY. Then recreate it: CREATE INDEX CONCURRENTLY ... After creation, monitor pg_index.indisvalid to confirm success.",
 		DocRef: docCreateIndexConcurrently,
 	}}
 }
 
-// evalDuplicateIndexes returns Info advice for groups of indexes on the same
-// relation with identical (indrelid, indkey, indclass, indoption, indexprs, indpred).
+// evalDuplicateIndexes returns Info advice for indexes on one relation with identical (indrelid, indkey, indclass, indoption, indexprs, indpred).
 // src: https://www.postgresql.org/docs/current/catalog-pg-index.html
 func evalDuplicateIndexes(groups []DuplicateIndexGroup) []pgtuner.Advice {
 	if len(groups) == 0 {
@@ -208,16 +185,15 @@ func evalDuplicateIndexes(groups []DuplicateIndexGroup) []pgtuner.Advice {
 		Level:   pgtuner.Info,
 		Section: schemaSection,
 		Title:   fmt.Sprintf("Duplicate indexes detected (%d group(s))", len(groups)),
-		Message: fmt.Sprintf("%d group(s) of user indexes share identical definitions (same table, key columns, operator classes, options, expressions and predicate): %s%s. Redundant indexes slow down writes without benefiting queries.",
+		Message: fmt.Sprintf("%d group(s) of user indexes share identical definitions (same table, key columns, operator classes, options, expressions and predicate): %s%s. Redundant indexes slow writes and give no benefit to queries.",
 			len(groups), strings.Join(capped, "; "), suffix),
-		Detail: "Keep the index whose name/constraint is most meaningful and drop the duplicates with DROP INDEX CONCURRENTLY.",
+		Detail: "Keep the index with the most meaningful name or constraint. Drop the duplicates with DROP INDEX CONCURRENTLY.",
 		DocRef: docPGIndex,
 	}}
 }
 
-// evalNoPrimaryKey returns Info advice for user tables larger than the threshold
-// that have no primary key. Tables without PKs cannot participate in logical
-// replication, cause problems for tools like pg_upgrade, and slow deduplication.
+// evalNoPrimaryKey returns Info advice for user tables above the size threshold that have no primary key.
+// Such tables cannot join logical replication and cause problems for tools like pg_upgrade.
 // src: https://www.postgresql.org/docs/current/ddl-constraints.html
 func evalNoPrimaryKey(rows []NoPKRow) []pgtuner.Advice {
 	if len(rows) == 0 {
@@ -235,17 +211,15 @@ func evalNoPrimaryKey(rows []NoPKRow) []pgtuner.Advice {
 		Level:   pgtuner.Info,
 		Section: schemaSection,
 		Title:   fmt.Sprintf("Tables without a primary key (%d)", len(rows)),
-		Message: fmt.Sprintf("%d user table(s) larger than 1 MiB have no primary key: %s%s. Tables without a primary key cannot be part of logical replication publications, and some maintenance/backup tools require or recommend primary keys.",
+		Message: fmt.Sprintf("%d user table(s) larger than 1 MiB have no primary key: %s%s. Tables without a primary key cannot be part of logical replication publications. Some maintenance and backup tools require or recommend primary keys.",
 			len(rows), strings.Join(capped, ", "), suffix),
-		Detail: "Add a primary key with ALTER TABLE ... ADD PRIMARY KEY (...). If a natural key is not available, use a generated serial/bigserial or UUID column.",
+		Detail: "Add a primary key with ALTER TABLE ... ADD PRIMARY KEY (...). If no natural key exists, use a generated serial, bigserial, or UUID column.",
 		DocRef: docDDLConstraints,
 	}}
 }
 
-// evalFKWithoutIndex returns Info advice for foreign key constraints on user tables
-// whose referencing columns are not covered by any user index. Missing FK indexes
-// slow cascade deletes and UPDATE/DELETE on the referenced table (full sequential
-// scan of the child table to find matching rows).
+// evalFKWithoutIndex returns Info advice for foreign keys whose referencing columns no user index covers.
+// Without the index, deletes and updates on the referenced table scan the child table sequentially.
 // src: https://www.postgresql.org/docs/current/ddl-constraints.html
 // src: https://www.postgresql.org/docs/current/indexes-intro.html
 func evalFKWithoutIndex(rows []FKNoIndexRow) []pgtuner.Advice {
@@ -263,16 +237,15 @@ func evalFKWithoutIndex(rows []FKNoIndexRow) []pgtuner.Advice {
 		Level:   pgtuner.Info,
 		Section: schemaSection,
 		Title:   fmt.Sprintf("Foreign key(s) without a supporting index (%d)", len(rows)),
-		Message: fmt.Sprintf("%d foreign key constraint(s) have no index on the referencing column(s): %s%s. Without an index, PostgreSQL must scan the child table sequentially when deleting or updating rows in the referenced table, causing lock escalation and slow cascades.",
+		Message: fmt.Sprintf("%d foreign key constraint(s) have no index on the referencing column(s): %s%s. Without an index, PostgreSQL must scan the child table sequentially when it deletes or updates rows in the referenced table. This causes lock escalation and slow cascades.",
 			len(rows), strings.Join(capped, ", "), suffix),
-		Detail: "Create an index on the FK column(s): CREATE INDEX CONCURRENTLY ON child_table(fk_col). This speeds up cascade deletes, referential integrity checks, and JOIN lookups.",
+		Detail: "Create an index on the FK column(s): CREATE INDEX CONCURRENTLY ON child_table(fk_col). This makes cascade deletes, referential integrity checks, and JOIN lookups faster.",
 		DocRef: docDDLConstraints,
 	}}
 }
 
-// evalNeverAnalyzed returns Warn advice for user tables with n_live_tup above
-// the threshold that have never been analyzed or autoanalyzed. The planner uses
-// stale or default statistics for such tables, leading to poor plan choices.
+// evalNeverAnalyzed returns Warn advice for tables above the n_live_tup threshold that were never analyzed.
+// The planner then uses stale or default statistics.
 // src: https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STAT-ALL-TABLES-VIEW
 func evalNeverAnalyzed(rows []NeverAnalyzedRow) []pgtuner.Advice {
 	if len(rows) == 0 {
@@ -293,18 +266,15 @@ func evalNeverAnalyzed(rows []NeverAnalyzedRow) []pgtuner.Advice {
 		Level:   pgtuner.Warn,
 		Section: schemaSection,
 		Title:   fmt.Sprintf("Tables never analyzed (stale planner stats) (%d)", len(rows)),
-		Message: fmt.Sprintf("%d table(s) with more than %d live rows have never been analyzed (last_analyze and last_autoanalyze are both NULL in pg_stat_user_tables): %s%s. The query planner will use default statistics for these tables, which can result in poor query plans.",
+		Message: fmt.Sprintf("%d table(s) with more than %d live rows have never been analyzed (last_analyze and last_autoanalyze are both NULL in pg_stat_user_tables): %s%s. The query planner uses default statistics for these tables. This can result in poor query plans.",
 			len(rows), neverAnalyzedLiveTupThreshold, strings.Join(capped, ", "), suffix),
-		Detail: "Run ANALYZE on the listed tables, or ensure autovacuum/autoanalyze is enabled and not suppressed (autovacuum_enabled storage parameter). Check pg_stat_user_tables.last_autoanalyze.",
+		Detail: "Run ANALYZE on the listed tables. Alternatively, make sure autovacuum and autoanalyze are enabled and not suppressed (autovacuum_enabled storage parameter). Check pg_stat_user_tables.last_autoanalyze.",
 		DocRef: docSchemaStatAllTables,
 	}}
 }
 
-// evalBloat returns Warn advice for user tables with a high ratio of dead tuples
-// (n_dead_tup / (n_live_tup + n_dead_tup) > threshold) AND size above threshold.
-// This is a simple heuristic using standard catalog stats columns; it is labelled as
-// an estimate because it reflects the stats collector's counters, not actual on-disk
-// page analysis.
+// evalBloat returns Warn advice for tables where n_dead_tup / (n_live_tup + n_dead_tup) and the table size exceed their thresholds.
+// It is an estimate: it uses stats collector counters, not on-disk page analysis.
 // src: https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STAT-ALL-TABLES-VIEW
 func evalBloat(rows []BloatRow) []pgtuner.Advice {
 	var offenders []string
@@ -330,15 +300,14 @@ func evalBloat(rows []BloatRow) []pgtuner.Advice {
 		Level:   pgtuner.Warn,
 		Section: schemaSection,
 		Title:   fmt.Sprintf("Table bloat estimate: high dead-tuple ratio (%d table(s))", len(offenders)),
-		Message: fmt.Sprintf("Estimate (based on pg_stat_user_tables n_dead_tup/n_live_tup — not pgstattuple): %d table(s) have dead-tuple ratio > %.0f%% and size > 1 MiB: %s%s. Tables may benefit from VACUUM to reclaim space.",
+		Message: fmt.Sprintf("Estimate (based on pg_stat_user_tables n_dead_tup/n_live_tup, not pgstattuple): %d table(s) have dead-tuple ratio > %.0f%% and size > 1 MiB: %s%s. VACUUM may help these tables reclaim space.",
 			len(offenders), bloatDeadRatioThreshold*100, strings.Join(capped, ", "), suffix),
-		Detail: "Run VACUUM on the listed tables or check that autovacuum is running. Use VACUUM FULL only during maintenance windows as it takes an exclusive lock. Dead-tuple ratio is an estimate; use pgstattuple extension for exact on-disk bloat measurement.",
+		Detail: "Run VACUUM on the listed tables. Alternatively, check that autovacuum runs. Use VACUUM FULL only during maintenance windows, because it takes an exclusive lock. The dead-tuple ratio is an estimate. For an exact on-disk bloat measurement, use the pgstattuple extension.",
 		DocRef: docSchemaStatAllTables,
 	}}
 }
 
-// evalLargestRelations returns an Info summary of the top-N user tables by total
-// size (including TOAST and indexes). This is purely informational context.
+// evalLargestRelations returns an Info summary of the largest user tables by total size, including TOAST and indexes.
 // src: https://www.postgresql.org/docs/current/functions-admin.html#FUNCTIONS-ADMIN-DBOBJECT
 func evalLargestRelations(rows []LargestRelRow) []pgtuner.Advice {
 	if len(rows) == 0 {
@@ -357,21 +326,18 @@ func evalLargestRelations(rows []LargestRelRow) []pgtuner.Advice {
 		Title:   fmt.Sprintf("Largest user tables overview (top %d)", len(rows)),
 		Message: fmt.Sprintf("Top %d user tables by pg_total_relation_size (includes indexes and TOAST): %s.",
 			len(rows), strings.Join(parts, ", ")),
-		Detail: "pg_total_relation_size includes the table heap, TOAST table, and all indexes. Use pg_relation_size for heap only.",
+		Detail: "pg_total_relation_size includes the table heap, the TOAST table, and all indexes. For the heap only, use pg_relation_size.",
 		DocRef: docObjectSizeFunctions,
 	}}
 }
 
-// capList caps a string slice to maxN items, returning the (possibly shorter) slice
-// and a suffix describing how many were omitted (empty when nothing is omitted).
+// capList trims items to maxN and returns a suffix that counts the omitted items (empty if none).
 func capList(items []string, maxN int) ([]string, string) {
 	if len(items) <= maxN {
 		return items, ""
 	}
 	return items[:maxN], fmt.Sprintf(" … and %d more", len(items)-maxN)
 }
-
-// ----- SchemaCheck -----------------------------------------------------------
 
 // SchemaCheck evaluates schema-level health: unused/invalid/duplicate indexes,
 // tables without PKs, foreign keys without supporting indexes, never-analyzed
@@ -380,9 +346,7 @@ type SchemaCheck struct{ databaseScoped }
 
 func (SchemaCheck) Name() string { return "schema" }
 
-// Run executes all schema sub-checks.  Each sub-check is independent; a query
-// failure produces a single Unknown-level advice for that sub-check while
-// siblings continue.  It never panics and never returns an error.
+// Run executes all schema sub-checks. A query failure gives one Unknown advice and the other sub-checks continue.
 func (SchemaCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 	var out []pgtuner.Advice
 
@@ -400,23 +364,18 @@ func (SchemaCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 			Level:   pgtuner.OK,
 			Section: schemaSection,
 			Title:   "Schema looks healthy",
-			Message: "No unused, invalid or duplicate indexes detected; all user tables have primary keys; no FK constraints are missing supporting indexes; all tables have been analyzed; no significant bloat detected.",
+			Message: "pgtuner found no unused, invalid, or duplicate indexes. All user tables have primary keys. No FK constraint lacks a supporting index. All tables have been analyzed. pgtuner found no significant bloat.",
 			DocRef:  docPGStatUserIndexes,
 		})
 	}
 	return out
 }
 
-// runUnusedIndexes queries pg_stat_user_indexes joined with pg_index to find
-// user-created non-unique indexes that have never been scanned and are larger than
-// the threshold.
+// runUnusedIndexes finds non-unique user indexes that have no scans and exceed the size threshold.
 // src: https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STAT-ALL-INDEXES-VIEW
 // src: https://www.postgresql.org/docs/current/catalog-pg-index.html
 func runUnusedIndexes(ctx context.Context, p *Probe) []pgtuner.Advice {
-	// Join pg_stat_user_indexes with pg_index to exclude unique and PK constraints.
-	// pg_relation_size(indexrelid) returns the on-disk size of the index file.
-	// We exclude unique indexes (indisunique) and primary keys (indisprimary) as
-	// those serve constraint enforcement roles beyond query performance.
+	// Unique and primary-key indexes enforce constraints, so the query excludes them.
 	// src: https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STAT-ALL-INDEXES-VIEW
 	// src: https://www.postgresql.org/docs/current/catalog-pg-index.html
 	const sql = `
@@ -470,14 +429,10 @@ LIMIT 20`
 	return evalUnusedIndexes(result)
 }
 
-// runInvalidIndexes queries pg_index for entries where indisvalid=false or
-// indisready=false, indicating a failed or incomplete index build.
+// runInvalidIndexes finds indexes with indisvalid=false or indisready=false (failed or incomplete build).
 // src: https://www.postgresql.org/docs/current/sql-createindex.html
 // src: https://www.postgresql.org/docs/current/catalog-pg-index.html
 func runInvalidIndexes(ctx context.Context, p *Probe) []pgtuner.Advice {
-	// Join pg_index with pg_class (index) and pg_class (table) to get readable names.
-	// Filter to user schemas (not pg_catalog or information_schema).
-	// src: https://www.postgresql.org/docs/current/sql-createindex.html
 	const sql = `
 SELECT n.nspname AS schemaname, t.relname AS relname, i.relname AS indexname
 FROM pg_index ix
@@ -529,18 +484,11 @@ LIMIT 20`
 	return evalInvalidIndexes(result)
 }
 
-// runDuplicateIndexes queries pg_index for user indexes that have identical
-// (indrelid, indkey, indclass, indoption, indexprs, indpred) — meaning they
-// index exactly the same columns with the same operator classes and predicates.
-// Duplicate indexes waste disk and slow down writes.
+// runDuplicateIndexes finds user indexes with identical (indrelid, indkey, indclass, indoption, indexprs, indpred).
 // src: https://www.postgresql.org/docs/current/catalog-pg-index.html
 func runDuplicateIndexes(ctx context.Context, p *Probe) []pgtuner.Advice {
-	// Group by the full index definition signature.  We use COALESCE on the
-	// nullable expression/predicate columns so that NULL compares equal to NULL
-	// within a group.  pg_get_expr produces a stable textual representation.
-	// We collect index names via array_agg so each group returns one row.
-	// t.relname is included in the GROUP BY (not a dependency on indrelid alone,
-	// since indrelid is not the primary key of pg_class in this context).
+	// COALESCE makes NULL expression and predicate columns compare equal within a group.
+	// t.relname is in the GROUP BY because indrelid alone does not determine it in this query.
 	// src: https://www.postgresql.org/docs/current/catalog-pg-index.html
 	const sql = `
 SELECT t.relname AS tablename,
@@ -602,15 +550,10 @@ LIMIT 20`
 	return evalDuplicateIndexes(groups)
 }
 
-// runNoPrimaryKey queries pg_stat_user_tables and pg_class for user tables that
-// have no primary key and are larger than the size threshold.
+// runNoPrimaryKey finds user tables above the size threshold that have no primary key.
 // src: https://www.postgresql.org/docs/current/ddl-constraints.html
 // src: https://www.postgresql.org/docs/current/functions-admin.html#FUNCTIONS-ADMIN-DBOBJECT
 func runNoPrimaryKey(ctx context.Context, p *Probe) []pgtuner.Advice {
-	// Use pg_stat_user_tables to scope to user tables in the current database,
-	// then check pg_index.indisprimary to determine whether a PK exists.
-	// pg_relation_size scopes to the current database automatically.
-	// src: https://www.postgresql.org/docs/current/ddl-constraints.html
 	const sql = `
 SELECT s.schemaname, s.relname, pg_relation_size(s.relid) AS tbl_size
 FROM pg_stat_user_tables s
@@ -662,26 +605,14 @@ LIMIT 20`
 	return evalNoPrimaryKey(result)
 }
 
-// runFKWithoutIndex finds foreign key constraints on user tables whose referencing
-// column set is not covered by any valid index on the child table.
-//
-// Detection method: for each FK constraint (contype='f') on a user table, check
-// whether any valid index on the same table has indkey columns that contain all
-// the FK referencing columns (conkey).  We use the @> array-containment operator
-// on int2[] casts of indkey and conkey — this checks that every FK column appears
-// somewhere in the index key list, regardless of order.  While prefix matching
-// would be more precise for btree, containment is the common DBA heuristic and
-// catches all practical cases without access-method branching.
-//
+// runFKWithoutIndex finds foreign keys whose referencing columns no valid index on the child table covers.
+// It uses @> containment of conkey in indkey, which ignores column order. Prefix matching is more precise for btree,
+// but containment avoids access-method branching.
 // src: https://www.postgresql.org/docs/current/ddl-constraints.html
 // src: https://www.postgresql.org/docs/current/catalog-pg-index.html
 // src: https://www.postgresql.org/docs/current/catalog-pg-constraint.html
 func runFKWithoutIndex(ctx context.Context, p *Probe) []pgtuner.Advice {
-	// FK query: find FKs where NO valid index covers all FK referencing columns.
-	// The @> operator on int2[] checks set containment (order-independent), which
-	// is a defensible proxy for "index can be used for FK lookups".
-	// We cast indkey (int2vector) → int2[] and conkey (int2[]) for the operator.
-	// Only user tables (relkind='r', not pg_catalog/information_schema) are checked.
+	// indkey is int2vector, so the query casts it to int2[] for the @> operator.
 	// src: https://www.postgresql.org/docs/current/catalog-pg-constraint.html
 	// src: https://www.postgresql.org/docs/current/catalog-pg-index.html
 	const sql = `
@@ -743,14 +674,10 @@ LIMIT 20`
 	return evalFKWithoutIndex(result)
 }
 
-// runNeverAnalyzed queries pg_stat_user_tables for tables where both last_analyze
-// and last_autoanalyze are NULL (never analyzed) with n_live_tup above threshold.
-// Also flags tables where both last_vacuum and last_autovacuum are NULL.
+// runNeverAnalyzed finds tables above the n_live_tup threshold where last_analyze and last_autoanalyze are both NULL.
+// It also records tables where last_vacuum and last_autovacuum are both NULL.
 // src: https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STAT-ALL-TABLES-VIEW
 func runNeverAnalyzed(ctx context.Context, p *Probe) []pgtuner.Advice {
-	// A table is "never analyzed" when both the manual and autovacuum/autoanalyze
-	// timestamps are NULL.  We also capture whether it has never been vacuumed.
-	// src: https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STAT-ALL-TABLES-VIEW
 	const sql = `
 SELECT schemaname, relname, n_live_tup,
        (last_vacuum IS NULL AND last_autovacuum IS NULL) AS never_vacuumed
@@ -800,12 +727,8 @@ LIMIT 20`
 	return evalNeverAnalyzed(result)
 }
 
-// runBloat queries pg_stat_user_tables for tables whose estimated dead-tuple
-// ratio (n_dead_tup / (n_live_tup + n_dead_tup)) exceeds the threshold and whose
-// size exceeds the size threshold.  Results are ordered by dead-tuple count descending
-// so the worst offenders appear first.
-// This is an estimate from the stats collector counters, not an exact on-disk
-// measurement.
+// runBloat reads dead and live tuple counters. Results are ordered by dead-tuple count descending.
+// The ratio is an estimate from stats collector counters, not an on-disk measurement.
 // src: https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STAT-ALL-TABLES-VIEW
 // src: https://www.postgresql.org/docs/current/functions-admin.html#FUNCTIONS-ADMIN-DBOBJECT
 func runBloat(ctx context.Context, p *Probe) []pgtuner.Advice {
@@ -857,9 +780,7 @@ LIMIT 20`
 	return evalBloat(result)
 }
 
-// runLargestRelations queries for the top-N user tables by total relation size
-// (heap + TOAST + indexes) using pg_total_relation_size.  This is purely
-// informational context.
+// runLargestRelations finds the largest user tables by pg_total_relation_size (heap, TOAST, indexes).
 // src: https://www.postgresql.org/docs/current/functions-admin.html#FUNCTIONS-ADMIN-DBOBJECT
 func runLargestRelations(ctx context.Context, p *Probe) []pgtuner.Advice {
 	const sql = `

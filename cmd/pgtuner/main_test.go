@@ -12,9 +12,7 @@ func TestRunVersion(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code: got %d want 0 (stderr: %s)", code, stderr.String())
 	}
-	// version is a build-time-injectable var (default "dev", overridden via
-	// -ldflags). Assert -version prints exactly whatever it is set to, and that
-	// it is non-empty — robust to any release tag.
+	// -version must print the current value of version, which is never empty.
 	if version == "" {
 		t.Fatal("version must not be empty")
 	}
@@ -29,8 +27,7 @@ func TestRunVersion(t *testing.T) {
 
 func TestRunFormatBogus(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	// An invalid -format value must be rejected with exit code 2 before any
-	// connection attempt, matching the -min-level / -sort error style.
+	// An invalid -format must exit with code 2 before any connection attempt.
 	code := run([]string{"-format", "bogus"}, &stdout, &stderr)
 	if code != 2 {
 		t.Fatalf("exit code: got %d want 2 (stderr: %s)", code, stderr.String())
@@ -56,33 +53,33 @@ func TestBuildDSN(t *testing.T) {
 			want: "",
 		},
 		{
-			name:   "host+port+user+dbname",
-			user:   "alice", host: "db.example.com", port: 5432, dbname: "mydb",
+			name: "host+port+user+dbname",
+			user: "alice", host: "db.example.com", port: 5432, dbname: "mydb",
 			want: "postgres://alice@db.example.com:5432/mydb",
 		},
 		{
-			name:   "host+port without user",
-			host:   "db.example.com", port: 5432, dbname: "mydb",
+			name: "host+port without user",
+			host: "db.example.com", port: 5432, dbname: "mydb",
 			want: "postgres://db.example.com:5432/mydb",
 		},
 		{
-			name:   "non-default port",
-			user:   "alice", host: "db.example.com", port: 5433, dbname: "mydb",
+			name: "non-default port",
+			user: "alice", host: "db.example.com", port: 5433, dbname: "mydb",
 			want: "postgres://alice@db.example.com:5433/mydb",
 		},
 		{
-			name:   "host+port without dbname",
-			user:   "alice", host: "db.example.com", port: 5432,
+			name: "host+port without dbname",
+			user: "alice", host: "db.example.com", port: 5432,
 			want: "postgres://alice@db.example.com:5432",
 		},
 		{
-			name:   "user without host places user as userinfo",
-			user:   "alice", dbname: "mydb",
+			name: "user without host places user as userinfo",
+			user: "alice", dbname: "mydb",
 			want: "postgres://alice@/mydb",
 		},
 		{
-			name:   "port 0 with host omits port",
-			host:   "db.example.com", port: 0, dbname: "mydb",
+			name: "port 0 with host omits port",
+			host: "db.example.com", port: 0, dbname: "mydb",
 			want: "postgres://db.example.com/mydb",
 		},
 	}

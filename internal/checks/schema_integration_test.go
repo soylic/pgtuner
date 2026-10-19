@@ -7,9 +7,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/OpenRemedy/pgtuner/internal/osinspect"
-	"github.com/OpenRemedy/pgtuner/internal/pg"
-	"github.com/OpenRemedy/pgtuner/pkg/pgtuner"
+	"github.com/soylic/pgtuner/internal/osinspect"
+	"github.com/soylic/pgtuner/internal/pg"
+	"github.com/soylic/pgtuner/pkg/pgtuner"
 )
 
 func TestSchemaIntegration(t *testing.T) {
@@ -45,12 +45,10 @@ func TestSchemaIntegration(t *testing.T) {
 
 	got := SchemaCheck{}.Run(ctx, probe)
 
-	// SchemaCheck must never return an empty slice (at minimum OK fallthrough).
 	if len(got) == 0 {
 		t.Fatal("expected at least one advice from SchemaCheck, got none")
 	}
 
-	// No query-failure Unknowns expected against a healthy PG instance.
 	for _, a := range got {
 		if a.Level == pgtuner.Unknown {
 			t.Errorf("SchemaCheck returned Unknown (query failure): %+v", a)
@@ -59,6 +57,6 @@ func TestSchemaIntegration(t *testing.T) {
 
 	t.Logf("SchemaCheck returned %d advice item(s): %v", len(got), levelsOf(got))
 	for _, a := range got {
-		t.Logf("  [%s] %s — %s", a.Level, a.Section, a.Title)
+		t.Logf("  [%s] %s: %s", a.Level, a.Section, a.Title)
 	}
 }

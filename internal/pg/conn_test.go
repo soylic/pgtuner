@@ -9,8 +9,7 @@ import (
 	"testing"
 )
 
-// liveVersionRE matches a major.minor version string. The CI matrix runs
-// against PG 14-18, so we assert a sane shape rather than a single major.
+// liveVersionRE matches major.minor. The CI matrix runs PG 14-18, so no single major is pinned.
 var liveVersionRE = regexp.MustCompile(`^\d+\.\d+$`)
 
 func TestConnectLive(t *testing.T) {
@@ -23,7 +22,7 @@ func TestConnectLive(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close(context.Background())
-	// 14 is the oldest version pgtuner supports (and the CI matrix floor).
+	// 14 is the oldest supported version.
 	if !c.Version.AtLeast(14, 0) {
 		t.Fatalf("unexpected version %s", c.Version)
 	}

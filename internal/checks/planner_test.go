@@ -5,12 +5,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OpenRemedy/pgtuner/internal/osinspect"
-	"github.com/OpenRemedy/pgtuner/internal/pg"
-	"github.com/OpenRemedy/pgtuner/pkg/pgtuner"
+	"github.com/soylic/pgtuner/internal/osinspect"
+	"github.com/soylic/pgtuner/internal/pg"
+	"github.com/soylic/pgtuner/pkg/pgtuner"
 )
 
-// helper: run planner check with given settings and optional fake OS.
 func runPlannerWithOS(settings map[string]string, os osinspect.Inspector) []pgtuner.Advice {
 	p := &Probe{
 		Settings: pg.NewSettings(settings),
@@ -19,12 +18,10 @@ func runPlannerWithOS(settings map[string]string, os osinspect.Inspector) []pgtu
 	return PlannerCheck{}.Run(context.Background(), p)
 }
 
-// helper: run planner check with given settings (no OS facts).
 func runPlanner(settings map[string]string) []pgtuner.Advice {
 	return runPlannerWithOS(settings, osinspect.NoopInspector{})
 }
 
-// healthyPlannerSettings returns all-good planner settings.
 func healthyPlannerSettings() map[string]string {
 	return map[string]string{
 		"random_page_cost":          "1.1",
@@ -33,7 +30,6 @@ func healthyPlannerSettings() map[string]string {
 	}
 }
 
-// TestPlannerRandomPageCostHigh: random_page_cost > 1.5 → Info.
 func TestPlannerRandomPageCostHigh(t *testing.T) {
 	s := healthyPlannerSettings()
 	s["random_page_cost"] = "4.0" // PostgreSQL default, likely SSD
@@ -43,7 +39,6 @@ func TestPlannerRandomPageCostHigh(t *testing.T) {
 	}
 }
 
-// TestPlannerRandomPageCostAtThreshold: random_page_cost == 1.5 → no flag (boundary exclusive).
 func TestPlannerRandomPageCostAtThreshold(t *testing.T) {
 	s := healthyPlannerSettings()
 	s["random_page_cost"] = "1.5"
@@ -55,7 +50,6 @@ func TestPlannerRandomPageCostAtThreshold(t *testing.T) {
 	}
 }
 
-// TestPlannerRandomPageCostLow: random_page_cost = 1.1 → no flag.
 func TestPlannerRandomPageCostLow(t *testing.T) {
 	got := runPlanner(healthyPlannerSettings())
 	for _, a := range got {
@@ -65,7 +59,6 @@ func TestPlannerRandomPageCostLow(t *testing.T) {
 	}
 }
 
-// TestPlannerEffectiveIOConcurrencyLow: effective_io_concurrency = 1 → Info.
 func TestPlannerEffectiveIOConcurrencyLow(t *testing.T) {
 	s := healthyPlannerSettings()
 	s["effective_io_concurrency"] = "1"
@@ -75,7 +68,6 @@ func TestPlannerEffectiveIOConcurrencyLow(t *testing.T) {
 	}
 }
 
-// TestPlannerEffectiveIOConcurrencyZero: effective_io_concurrency = 0 → Info (also ≤1).
 func TestPlannerEffectiveIOConcurrencyZero(t *testing.T) {
 	s := healthyPlannerSettings()
 	s["effective_io_concurrency"] = "0"
@@ -85,7 +77,6 @@ func TestPlannerEffectiveIOConcurrencyZero(t *testing.T) {
 	}
 }
 
-// TestPlannerDefaultStatisticsTargetLow: default_statistics_target < 100 → Info.
 func TestPlannerDefaultStatisticsTargetLow(t *testing.T) {
 	s := healthyPlannerSettings()
 	s["default_statistics_target"] = "50"
@@ -95,7 +86,6 @@ func TestPlannerDefaultStatisticsTargetLow(t *testing.T) {
 	}
 }
 
-// TestPlannerDefaultStatisticsTargetAtDefault: default_statistics_target = 100 → no flag.
 func TestPlannerDefaultStatisticsTargetAtDefault(t *testing.T) {
 	s := healthyPlannerSettings()
 	s["default_statistics_target"] = "100"
@@ -107,7 +97,6 @@ func TestPlannerDefaultStatisticsTargetAtDefault(t *testing.T) {
 	}
 }
 
-// TestPlannerAllHealthy: all good settings → OK.
 func TestPlannerAllHealthy(t *testing.T) {
 	got := runPlanner(healthyPlannerSettings())
 	if !hasLevel(got, pgtuner.OK) {
@@ -115,11 +104,9 @@ func TestPlannerAllHealthy(t *testing.T) {
 	}
 }
 
-// ----- evalRandomPageCostStorage (pure function) ----------------------------
 // src: https://www.postgresql.org/docs/current/runtime-config-query.html#GUC-RANDOM-PAGE-COST
 
 func TestEvalRPCStorage_SSDHighCost_SpecificInfo(t *testing.T) {
-	// SSD + high random_page_cost → Info mentioning non-rotational storage.
 	f := false
 	a := evalRandomPageCostStorage(&f, 4.0)
 	if a == nil || a.Level != pgtuner.Info {
@@ -131,7 +118,6 @@ func TestEvalRPCStorage_SSDHighCost_SpecificInfo(t *testing.T) {
 }
 
 func TestEvalRPCStorage_SSDLowCost_NoAdvice(t *testing.T) {
-	// SSD + low random_page_cost (1.1) → no advice.
 	f := false
 	a := evalRandomPageCostStorage(&f, 1.1)
 	if a != nil {
@@ -140,8 +126,6 @@ func TestEvalRPCStorage_SSDLowCost_NoAdvice(t *testing.T) {
 }
 
 func TestEvalRPCStorage_HDDLowCost_Info(t *testing.T) {
-	// HDD + random_page_cost too low (1.1) → Info about spinning disk.
-	// src: https://www.postgresql.org/docs/current/runtime-config-query.html#GUC-RANDOM-PAGE-COST
 	tru := true
 	a := evalRandomPageCostStorage(&tru, 1.1)
 	if a == nil || a.Level != pgtuner.Info {
@@ -153,7 +137,6 @@ func TestEvalRPCStorage_HDDLowCost_Info(t *testing.T) {
 }
 
 func TestEvalRPCStorage_HDDHighCost_NoAdvice(t *testing.T) {
-	// HDD + random_page_cost=4.0 (appropriate for HDDs) → no advice.
 	tru := true
 	a := evalRandomPageCostStorage(&tru, 4.0)
 	if a != nil {
@@ -172,7 +155,6 @@ func TestEvalRPCStorage_HDDAtBoundary_NoAdvice(t *testing.T) {
 }
 
 func TestEvalRPCStorage_Unknown_Generic(t *testing.T) {
-	// Unknown storage type + high rpc → generic Info (original behaviour).
 	a := evalRandomPageCostStorage(nil, 4.0)
 	if a == nil || a.Level != pgtuner.Info {
 		t.Fatalf("expected generic Info for unknown storage + rpc=4.0, got %v", a)
@@ -180,14 +162,11 @@ func TestEvalRPCStorage_Unknown_Generic(t *testing.T) {
 }
 
 func TestEvalRPCStorage_Unknown_LowCost_NoAdvice(t *testing.T) {
-	// Unknown storage + low rpc (1.1, not > 1.5) → no advice.
 	a := evalRandomPageCostStorage(nil, 1.1)
 	if a != nil {
 		t.Fatalf("expected no advice for unknown storage + rpc=1.1, got %+v", a)
 	}
 }
-
-// ----- storageRotational -----------------------------------------------------
 
 func TestStorageRotational_Empty(t *testing.T) {
 	got := storageRotational(nil)
@@ -229,10 +208,7 @@ func TestStorageRotational_Mixed_SSDTakesPrecedence(t *testing.T) {
 	}
 }
 
-// ----- PlannerCheck.Run with fakeOS ------------------------------------------
-
 func TestPlannerSSDHighRPCSpecificMessage(t *testing.T) {
-	// PlannerCheck.Run with SSD device → SSD-specific message.
 	s := map[string]string{
 		"random_page_cost":          "4.0",
 		"effective_io_concurrency":  "200",
@@ -251,7 +227,6 @@ func TestPlannerSSDHighRPCSpecificMessage(t *testing.T) {
 	}
 }
 
-// fakeOSWithSSD wraps fakeOS and overrides StorageDevices to return one SSD.
 type fakeOSWithSSD struct{ fakeOS }
 
 func (f fakeOSWithSSD) StorageDevices() ([]osinspect.StorageDevice, error) {

@@ -3,12 +3,12 @@ package pg
 import (
 	"context"
 	"strconv"
+	"strings"
 )
 
 // Settings is a cached snapshot of pg_settings (name -> setting value).
 type Settings struct{ raw map[string]string }
 
-// LoadSettings reads the full pg_settings catalog into memory.
 func LoadSettings(ctx context.Context, c *Conn) (*Settings, error) {
 	rows, err := c.Query(ctx, "SELECT name, setting FROM pg_settings")
 	if err != nil {
@@ -39,8 +39,8 @@ func (s *Settings) Int(name string) (int64, bool) {
 	return n, err == nil
 }
 
-// Bool reports whether the setting equals "on". An absent key returns false;
-// for settings whose absence is meaningful, use Get and check the ok value.
+// Bool reports whether the setting equals "on". An absent key returns false.
+// Use Get when absence matters.
 func (s *Settings) Bool(name string) bool { return s.raw[name] == "on" }
 
 // Float parses the setting as a float64; ok is false if absent or non-numeric.
@@ -53,6 +53,15 @@ func (s *Settings) Float(name string) (float64, bool) {
 	return f, err == nil
 }
 
-// NewSettings builds a Settings snapshot from a name->value map. Intended for
-// tests and for callers that already hold pg_settings values.
+// NewSettings builds a Settings snapshot from a name->value map.
 func NewSettings(raw map[string]string) *Settings { return &Settings{raw: raw} }
+
+// HasPrefix reports whether any setting name starts with prefix.
+func (s *Settings) HasPrefix(prefix string) bool {
+	for name := range s.raw {
+		if strings.HasPrefix(name, prefix) {
+			return true
+		}
+	}
+	return false
+}

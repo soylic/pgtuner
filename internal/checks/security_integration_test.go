@@ -7,9 +7,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/OpenRemedy/pgtuner/internal/osinspect"
-	"github.com/OpenRemedy/pgtuner/internal/pg"
-	"github.com/OpenRemedy/pgtuner/pkg/pgtuner"
+	"github.com/soylic/pgtuner/internal/osinspect"
+	"github.com/soylic/pgtuner/internal/pg"
+	"github.com/soylic/pgtuner/pkg/pgtuner"
 )
 
 func TestSecurityIntegration(t *testing.T) {
@@ -49,8 +49,6 @@ func TestSecurityIntegration(t *testing.T) {
 	}
 	t.Logf("SecurityCheck returned %d advice item(s): %v", len(got), levelsOf(got))
 
-	// PG16: the public schema CREATE-revoke (PG≥15 rule) should not return Unknown.
-	// The live DB has the privilege revoked (has_schema_privilege returns false),
-	// so no Warn should appear from that sub-check.
+	// The live DB has CREATE revoked on public, so that sub-check must not Warn.
 	t.Logf("server version: %s", conn.Version)
 }

@@ -7,10 +7,9 @@ import (
 
 	"golang.org/x/term"
 
-	"github.com/OpenRemedy/pgtuner/pkg/pgtuner"
+	"github.com/soylic/pgtuner/pkg/pgtuner"
 )
 
-// ANSI color codes.
 const (
 	ansiReset   = "\033[0m"
 	ansiRed     = "\033[31m"
@@ -21,7 +20,6 @@ const (
 	ansiMagenta = "\033[35m"
 )
 
-// levelGlyph returns the tag and optional ANSI color for a level.
 func levelGlyph(l pgtuner.Level, color bool) (tag, colorCode string) {
 	switch l {
 	case pgtuner.OK:
@@ -53,8 +51,6 @@ func ColorEnabled(f *os.File) bool {
 	return term.IsTerminal(int(f.Fd()))
 }
 
-// writeAdvice renders a single advice item with its level glyph, optional
-// database tag, detail, and doc reference.
 func writeAdvice(w io.Writer, a pgtuner.Advice, color bool) error {
 	tag, col := levelGlyph(a.Level, color)
 	dbTag := ""
@@ -63,9 +59,9 @@ func writeAdvice(w io.Writer, a pgtuner.Advice, color bool) error {
 	}
 	var line string
 	if color {
-		line = fmt.Sprintf("  %s%s%s  %s%s — %s\n", col, tag, ansiReset, dbTag, a.Title, a.Message)
+		line = fmt.Sprintf("  %s%s%s  %s%s: %s\n", col, tag, ansiReset, dbTag, a.Title, a.Message)
 	} else {
-		line = fmt.Sprintf("  %s  %s%s — %s\n", tag, dbTag, a.Title, a.Message)
+		line = fmt.Sprintf("  %s  %s%s: %s\n", tag, dbTag, a.Title, a.Message)
 	}
 	if _, err := fmt.Fprint(w, line); err != nil {
 		return err
@@ -83,23 +79,15 @@ func writeAdvice(w io.Writer, a pgtuner.Advice, color bool) error {
 	return nil
 }
 
-// WriteTerminal writes a human-readable report to w. When severitySort is
-// false (the default) advice is grouped by Section (preserving first-seen
-// order); when true it is rendered as a single flat list in the order of
-// r.Advice (the caller is expected to have severity-sorted it). A "(section)"
-// label is printed only when the section changes between consecutive items, so
-// runs of same-section items are not repeatedly labelled. When color is true,
-// ANSI codes highlight levels.
+// WriteTerminal writes a human-readable report to w. By default it groups advice
+// by Section in first-seen order. With severitySort it prints one flat list in
+// r.Advice order and labels a section only when it changes. With color it adds ANSI codes.
 func WriteTerminal(w io.Writer, r *pgtuner.Report, color, severitySort bool) error {
-	// Header.
-	if _, err := fmt.Fprintf(w, "PostgreSQL Tuning Report — server %s\n\n", r.ServerVersion); err != nil {
+	if _, err := fmt.Fprintf(w, "PostgreSQL Tuning Report, server %s\n\n", r.ServerVersion); err != nil {
 		return err
 	}
 
 	if severitySort {
-		// Flat severity-ordered list. Print the section label only when it
-		// changes from the previous item's section, so a run of items in the
-		// same section is not prefixed by a repeated "(section)" line.
 		if _, err := fmt.Fprintf(w, "=== Findings (by severity) ===\n"); err != nil {
 			return err
 		}
@@ -121,7 +109,6 @@ func WriteTerminal(w io.Writer, r *pgtuner.Report, color, severitySort bool) err
 			return err
 		}
 	} else {
-		// Gather section order and group advice.
 		sectionOrder := make([]string, 0)
 		grouped := make(map[string][]pgtuner.Advice)
 		for _, a := range r.Advice {
@@ -131,7 +118,6 @@ func WriteTerminal(w io.Writer, r *pgtuner.Report, color, severitySort bool) err
 			grouped[a.Section] = append(grouped[a.Section], a)
 		}
 
-		// Print each section.
 		for _, sec := range sectionOrder {
 			if _, err := fmt.Fprintf(w, "=== %s ===\n", sec); err != nil {
 				return err
@@ -147,7 +133,7 @@ func WriteTerminal(w io.Writer, r *pgtuner.Report, color, severitySort bool) err
 		}
 	}
 
-	// Summary line — always print all six levels in a fixed order.
+	// The summary always lists all six levels in a fixed order.
 	levels := []pgtuner.Level{pgtuner.OK, pgtuner.Info, pgtuner.Todo, pgtuner.Warn, pgtuner.Bad, pgtuner.Unknown}
 	if _, err := fmt.Fprintf(w, "Summary:"); err != nil {
 		return err

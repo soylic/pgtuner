@@ -7,9 +7,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/OpenRemedy/pgtuner/internal/osinspect"
-	"github.com/OpenRemedy/pgtuner/internal/pg"
-	"github.com/OpenRemedy/pgtuner/pkg/pgtuner"
+	"github.com/soylic/pgtuner/internal/osinspect"
+	"github.com/soylic/pgtuner/internal/pg"
+	"github.com/soylic/pgtuner/pkg/pgtuner"
 )
 
 func TestWorkloadIntegration(t *testing.T) {
@@ -59,6 +59,6 @@ func TestWorkloadIntegration(t *testing.T) {
 
 	t.Logf("WorkloadCheck returned %d advice item(s): %v", len(got), levelsOf(got))
 	for _, a := range got {
-		t.Logf("  [%s] %s — %s", a.Level, a.Section, a.Title)
+		t.Logf("  [%s] %s: %s", a.Level, a.Section, a.Title)
 	}
 }

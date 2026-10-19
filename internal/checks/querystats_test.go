@@ -5,14 +5,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OpenRemedy/pgtuner/internal/pg"
-	"github.com/OpenRemedy/pgtuner/pkg/pgtuner"
+	"github.com/soylic/pgtuner/internal/pg"
+	"github.com/soylic/pgtuner/pkg/pgtuner"
 )
 
-// ----- queryStatsColumns -------------------------------------------------------
-
-// TestQueryStatsColumns_PG12 verifies the PG12 branch returns legacy column names.
-// PG ≤ 12 used total_time and mean_time (confirmed live against postgres:12-alpine).
 // src: https://www.postgresql.org/docs/current/pgstatstatements.html
 func TestQueryStatsColumns_PG12(t *testing.T) {
 	v := pg.ServerVersion{Major: 12, Minor: 0}
@@ -25,7 +21,6 @@ func TestQueryStatsColumns_PG12(t *testing.T) {
 	}
 }
 
-// TestQueryStatsColumns_PG12Late verifies PG12.99 still returns legacy names.
 func TestQueryStatsColumns_PG12Late(t *testing.T) {
 	v := pg.ServerVersion{Major: 12, Minor: 9999}
 	totalCol, meanCol := queryStatsColumns(v)
@@ -37,8 +32,6 @@ func TestQueryStatsColumns_PG12Late(t *testing.T) {
 	}
 }
 
-// TestQueryStatsColumns_PG13 verifies the PG13 branch returns renamed column names.
-// The rename from total_time→total_exec_time happened in PG13.
 // src: https://www.postgresql.org/docs/current/pgstatstatements.html
 func TestQueryStatsColumns_PG13(t *testing.T) {
 	v := pg.ServerVersion{Major: 13, Minor: 0}
@@ -51,7 +44,6 @@ func TestQueryStatsColumns_PG13(t *testing.T) {
 	}
 }
 
-// TestQueryStatsColumns_PG14 verifies PG14 uses the new column names.
 // src: https://www.postgresql.org/docs/current/pgstatstatements.html
 func TestQueryStatsColumns_PG14(t *testing.T) {
 	v := pg.ServerVersion{Major: 14, Minor: 0}
@@ -64,7 +56,6 @@ func TestQueryStatsColumns_PG14(t *testing.T) {
 	}
 }
 
-// TestQueryStatsColumns_PG16 verifies PG16 (current LTS) uses the new column names.
 func TestQueryStatsColumns_PG16(t *testing.T) {
 	v := pg.ServerVersion{Major: 16, Minor: 0}
 	totalCol, meanCol := queryStatsColumns(v)
@@ -76,7 +67,6 @@ func TestQueryStatsColumns_PG16(t *testing.T) {
 	}
 }
 
-// TestQueryStatsColumns_PG18 verifies PG18 (future) also uses the new column names.
 func TestQueryStatsColumns_PG18(t *testing.T) {
 	v := pg.ServerVersion{Major: 18, Minor: 0}
 	totalCol, meanCol := queryStatsColumns(v)
@@ -88,9 +78,6 @@ func TestQueryStatsColumns_PG18(t *testing.T) {
 	}
 }
 
-// ----- truncateQuery -----------------------------------------------------------
-
-// TestTruncateQuery_Short verifies that a short query is returned unchanged.
 func TestTruncateQuery_Short(t *testing.T) {
 	q := "SELECT 1"
 	got := truncateQuery(q)
@@ -99,7 +86,6 @@ func TestTruncateQuery_Short(t *testing.T) {
 	}
 }
 
-// TestTruncateQuery_Whitespace verifies that internal whitespace is collapsed.
 func TestTruncateQuery_Whitespace(t *testing.T) {
 	q := "SELECT  \t\n  1  "
 	got := truncateQuery(q)
@@ -108,10 +94,7 @@ func TestTruncateQuery_Whitespace(t *testing.T) {
 	}
 }
 
-// TestTruncateQuery_Long verifies that a query longer than queryStatsQueryTruncLen
-// runes is truncated and suffixed with "…".
 func TestTruncateQuery_Long(t *testing.T) {
-	// Build a query longer than queryStatsQueryTruncLen (100) runes.
 	q := "SELECT " + strings.Repeat("x,", 60) + "y FROM t"
 	got := truncateQuery(q)
 	runes := []rune(got)
@@ -124,10 +107,7 @@ func TestTruncateQuery_Long(t *testing.T) {
 	}
 }
 
-// TestTruncateQuery_ExactBoundary verifies a query of exactly queryStatsQueryTruncLen
-// runes is returned unchanged (no ellipsis).
 func TestTruncateQuery_ExactBoundary(t *testing.T) {
-	// Build a query of exactly 100 runes (queryStatsQueryTruncLen).
 	q := strings.Repeat("x", queryStatsQueryTruncLen)
 	got := truncateQuery(q)
 	if got != q {
@@ -138,9 +118,6 @@ func TestTruncateQuery_ExactBoundary(t *testing.T) {
 	}
 }
 
-// ----- evalTopQueryByTime ------------------------------------------------------
-
-// TestEvalTopQueryByTime_Empty verifies no advice is emitted for an empty slice.
 // src: https://www.postgresql.org/docs/current/pgstatstatements.html
 func TestEvalTopQueryByTime_Empty(t *testing.T) {
 	got := evalTopQueryByTime(nil)
@@ -149,8 +126,6 @@ func TestEvalTopQueryByTime_Empty(t *testing.T) {
 	}
 }
 
-// TestEvalTopQueryByTime_SingleRow verifies a single row produces an Info with
-// the query's metrics in the message.
 func TestEvalTopQueryByTime_SingleRow(t *testing.T) {
 	rows := []queryStatsRow{
 		{Query: "SELECT count(*) FROM orders", Calls: 1000, TotalExecMs: 5000.0, MeanExecMs: 5.0, Rows: 1000},
@@ -174,8 +149,6 @@ func TestEvalTopQueryByTime_SingleRow(t *testing.T) {
 	}
 }
 
-// TestEvalTopQueryByTime_CapAtTopN verifies that when more than queryStatsTopN
-// rows are provided only the first queryStatsTopN are shown in the message.
 func TestEvalTopQueryByTime_CapAtTopN(t *testing.T) {
 	rows := make([]queryStatsRow, queryStatsTopN+3)
 	for i := range rows {
@@ -196,9 +169,6 @@ func TestEvalTopQueryByTime_CapAtTopN(t *testing.T) {
 	}
 }
 
-// ----- evalLowCacheHitQueries --------------------------------------------------
-
-// TestEvalLowCacheHitQueries_Empty verifies no advice for an empty set.
 // src: https://www.postgresql.org/docs/current/pgstatstatements.html
 func TestEvalLowCacheHitQueries_Empty(t *testing.T) {
 	got := evalLowCacheHitQueries(nil)
@@ -207,10 +177,7 @@ func TestEvalLowCacheHitQueries_Empty(t *testing.T) {
 	}
 }
 
-// TestEvalLowCacheHitQueries_HighHitRatio verifies no advice when hit ratio
-// is at the threshold (0.90 = not below, so no advice).
 func TestEvalLowCacheHitQueries_HighHitRatio(t *testing.T) {
-	// 9000 hit + 1000 read = 10000 total; ratio = 0.90 (at boundary, not below).
 	rows := []queryStatsRow{
 		{Query: "SELECT 1", Calls: 1, SharedBlksHit: 9000, SharedBlksRead: 1000},
 	}
@@ -220,10 +187,7 @@ func TestEvalLowCacheHitQueries_HighHitRatio(t *testing.T) {
 	}
 }
 
-// TestEvalLowCacheHitQueries_BelowThreshold verifies Info when hit ratio < 0.90
-// and total blocks >= cacheHitMinTotalBlocks.
 func TestEvalLowCacheHitQueries_BelowThreshold(t *testing.T) {
-	// 8000 hit + 2001 read = 10001 total; ratio ≈ 0.7999 (below 0.90).
 	rows := []queryStatsRow{
 		{Query: "SELECT big FROM tbl", Calls: 5, SharedBlksHit: 8000, SharedBlksRead: 2001},
 	}
@@ -240,11 +204,7 @@ func TestEvalLowCacheHitQueries_BelowThreshold(t *testing.T) {
 	}
 }
 
-// TestEvalLowCacheHitQueries_BelowMinBlocks verifies no advice when total blocks
-// is below cacheHitMinTotalBlocks, even if hit ratio is low.  Small queries have
-// noisy ratios.
 func TestEvalLowCacheHitQueries_BelowMinBlocks(t *testing.T) {
-	// 5 hit + 5 read = 10 total (way below cacheHitMinTotalBlocks=1000).
 	rows := []queryStatsRow{
 		{Query: "SELECT 1", Calls: 1, SharedBlksHit: 5, SharedBlksRead: 5},
 	}
@@ -254,8 +214,6 @@ func TestEvalLowCacheHitQueries_BelowMinBlocks(t *testing.T) {
 	}
 }
 
-// TestEvalLowCacheHitQueries_AllReads verifies Info when all accesses are reads
-// (hit=0) and total blocks is significant.
 func TestEvalLowCacheHitQueries_AllReads(t *testing.T) {
 	rows := []queryStatsRow{
 		{Query: "SELECT * FROM large_table", Calls: 10, SharedBlksHit: 0, SharedBlksRead: 5000},
@@ -266,7 +224,6 @@ func TestEvalLowCacheHitQueries_AllReads(t *testing.T) {
 	}
 }
 
-// TestEvalLowCacheHitQueries_AllHits verifies no advice when all accesses are hits.
 func TestEvalLowCacheHitQueries_AllHits(t *testing.T) {
 	rows := []queryStatsRow{
 		{Query: "SELECT 1", Calls: 100, SharedBlksHit: 50000, SharedBlksRead: 0},
@@ -277,9 +234,6 @@ func TestEvalLowCacheHitQueries_AllHits(t *testing.T) {
 	}
 }
 
-// ----- evalTempHeavyQueries ----------------------------------------------------
-
-// TestEvalTempHeavyQueries_Empty verifies no advice for an empty set.
 // src: https://www.postgresql.org/docs/current/pgstatstatements.html
 func TestEvalTempHeavyQueries_Empty(t *testing.T) {
 	got := evalTempHeavyQueries(nil)
@@ -288,7 +242,6 @@ func TestEvalTempHeavyQueries_Empty(t *testing.T) {
 	}
 }
 
-// TestEvalTempHeavyQueries_ZeroTemp verifies no advice when temp_blks_written is 0.
 func TestEvalTempHeavyQueries_ZeroTemp(t *testing.T) {
 	rows := []queryStatsRow{
 		{Query: "SELECT order_id FROM orders ORDER BY amount", Calls: 1000, TempBlksWritten: 0},
@@ -299,8 +252,6 @@ func TestEvalTempHeavyQueries_ZeroTemp(t *testing.T) {
 	}
 }
 
-// TestEvalTempHeavyQueries_BelowThreshold verifies no advice when temp writes
-// are below the meaningful threshold (tempBlksWrittenThreshold).
 func TestEvalTempHeavyQueries_BelowThreshold(t *testing.T) {
 	// tempBlksWrittenThreshold = 128; below that is noise.
 	rows := []queryStatsRow{
@@ -312,8 +263,6 @@ func TestEvalTempHeavyQueries_BelowThreshold(t *testing.T) {
 	}
 }
 
-// TestEvalTempHeavyQueries_AtThreshold verifies Info when temp writes are exactly
-// at the threshold (tempBlksWrittenThreshold is an inclusive lower bound: >=).
 func TestEvalTempHeavyQueries_AtThreshold(t *testing.T) {
 	rows := []queryStatsRow{
 		{Query: "SELECT * FROM big ORDER BY col", Calls: 5, TempBlksWritten: tempBlksWrittenThreshold},
@@ -327,7 +276,6 @@ func TestEvalTempHeavyQueries_AtThreshold(t *testing.T) {
 	}
 }
 
-// TestEvalTempHeavyQueries_AboveThreshold verifies Info for a significant spill.
 func TestEvalTempHeavyQueries_AboveThreshold(t *testing.T) {
 	rows := []queryStatsRow{
 		{Query: "SELECT * FROM events ORDER BY created_at", Calls: 100, TempBlksWritten: 10000},
@@ -344,8 +292,6 @@ func TestEvalTempHeavyQueries_AboveThreshold(t *testing.T) {
 	}
 }
 
-// TestEvalTempHeavyQueries_MultipleRows verifies that multiple temp-heavy queries
-// are all detected and capped to queryStatsTopN in the message.
 func TestEvalTempHeavyQueries_MultipleRows(t *testing.T) {
 	rows := make([]queryStatsRow, queryStatsTopN+2)
 	for i := range rows {
@@ -359,15 +305,11 @@ func TestEvalTempHeavyQueries_MultipleRows(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("expected 1 combined advice, got %d", len(got))
 	}
-	// Title should mention the total count of offenders (all rows qualify).
 	if !containsStr(got[0].Title, fmt.Sprintf("%d", len(rows))) {
 		t.Errorf("expected offender count %d in title, got: %s", len(rows), got[0].Title)
 	}
 }
 
-// ----- misc ------------------------------------------------------------------
-
-// TestQueryStatsCheck_Name verifies the check name.
 func TestQueryStatsCheck_Name(t *testing.T) {
 	var c QueryStatsCheck
 	if c.Name() != "querystats" {

@@ -4,10 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OpenRemedy/pgtuner/pkg/pgtuner"
+	"github.com/soylic/pgtuner/pkg/pgtuner"
 )
-
-// ----- evalDeadTuples --------------------------------------------------------
 
 func TestEvalDeadTuples_NoRows(t *testing.T) {
 	got := evalDeadTuples(nil, 50, 0.2)
@@ -51,7 +49,6 @@ func TestEvalDeadTuples_AboveThreshold(t *testing.T) {
 }
 
 func TestEvalDeadTuples_MultipleOffenders(t *testing.T) {
-	// Three tables all above threshold.
 	rows := []DeadTupleRow{
 		{SchemaName: "public", RelName: "a", DeadTuples: 1000, LiveTuples: 100},
 		{SchemaName: "public", RelName: "b", DeadTuples: 2000, LiveTuples: 200},
@@ -62,7 +59,6 @@ func TestEvalDeadTuples_MultipleOffenders(t *testing.T) {
 	if len(got) == 0 || got[0].Level != pgtuner.Warn {
 		t.Fatalf("expected Warn for multiple offenders, got %v", levelsOf(got))
 	}
-	// Message should mention the table names.
 	if got[0].Message == "" {
 		t.Fatal("expected non-empty message")
 	}
@@ -91,8 +87,6 @@ func TestEvalDeadTuples_CapMessage(t *testing.T) {
 		t.Fatalf("expected '... and N more' in capped message, got: %s", msg)
 	}
 }
-
-// ----- evalWraparound --------------------------------------------------------
 
 func TestEvalWraparound_Safe(t *testing.T) {
 	// 10% of maxAge → nil (safe)
@@ -151,7 +145,6 @@ func TestEvalWraparound_ZeroMaxAge(t *testing.T) {
 	}
 }
 
-// ----- evalWorkersCPU --------------------------------------------------------
 // src: https://www.postgresql.org/docs/current/runtime-config-autovacuum.html#GUC-AUTOVACUUM-MAX-WORKERS
 
 func TestEvalWorkersCPU_NoContention(t *testing.T) {

@@ -11,8 +11,7 @@ import (
 	"strings"
 )
 
-// LocalInspector reads OS facts from the local host's /proc filesystem.
-// Intended to run on the database host itself.
+// LocalInspector reads OS facts from /proc on the local host. Run it on the database host.
 type LocalInspector struct{}
 
 func (LocalInspector) Memory() (Memory, error) {
@@ -69,12 +68,9 @@ func (LocalInspector) Sysctl(key string) (string, error) {
 	return strings.TrimSpace(string(b)), nil
 }
 
-// detectCgroupVersion returns the cgroup API version active on the host.
-// It checks for the cgroup v2 unified hierarchy first (a well-known file that
-// is present on all v2 mounts), then falls back to the v1 memory controller.
+// detectCgroupVersion returns 2 if /sys/fs/cgroup/cgroup.controllers exists, 1 if
+// /sys/fs/cgroup/memory exists, else 0.
 // src: https://docs.kernel.org/admin-guide/cgroup-v2.html
-//   - cgroup v2: /sys/fs/cgroup/cgroup.controllers exists
-//   - cgroup v1: /sys/fs/cgroup/memory exists (the memory sub-hierarchy)
 func detectCgroupVersion() int {
 	if _, err := os.Stat("/sys/fs/cgroup/cgroup.controllers"); err == nil {
 		return 2
@@ -85,22 +81,19 @@ func detectCgroupVersion() int {
 	return 0
 }
 
-// detectEnvKind determines the execution environment using signals from
-// /proc, /sys, and environment variables. The precedence order is:
-//  1. Kubernetes — KUBERNETES_SERVICE_HOST set or cgroup path contains "kubepods".
-//  2. Docker — /.dockerenv present or cgroup path contains "docker".
-//  3. LXC — /proc/1/environ contains "lxc" or cgroup path contains "lxc".
-//  4. VM — /sys/class/dmi/id/product_name matches a known hypervisor string.
-//  5. BareMetal — none of the above matched.
+// detectEnvKind uses /proc, /sys, and environment variables. Precedence:
+//  1. Kubernetes: KUBERNETES_SERVICE_HOST set or cgroup path contains "kubepods".
+//  2. Docker: /.dockerenv present or cgroup path contains "docker".
+//  3. LXC: /proc/1/environ contains "lxc" or cgroup path contains "lxc".
+//  4. VM: /sys/class/dmi/id/product_name matches a known hypervisor string.
+//  5. BareMetal: none of the above matched.
 //
 // src: https://docs.kernel.org/admin-guide/cgroup-v2.html (cgroup paths)
 // src: https://www.postgresql.org/docs/current/kernel-resources.html
 func detectEnvKind() EnvKind {
 	cgroupContent := readCgroupContent()
 
-	// --- Kubernetes -----------------------------------------------------------
-	// The kubelet injects KUBERNETES_SERVICE_HOST into every pod's environment.
-	// Additionally, Kubernetes cgroup names always start with "kubepods".
+	// The kubelet sets KUBERNETES_SERVICE_HOST in every pod, and pod cgroup names start with "kubepods".
 	// src: https://kubernetes.io/docs/concepts/services-networking/connect-applications-service/
 	if os.Getenv("KUBERNETES_SERVICE_HOST") != "" {
 		return EnvKubernetes
@@ -109,8 +102,7 @@ func detectEnvKind() EnvKind {
 		return EnvKubernetes
 	}
 
-	// --- Docker ---------------------------------------------------------------
-	// Docker creates /.dockerenv in every container it starts.
+	// Docker creates /.dockerenv in every container.
 	// src: https://docs.docker.com/engine/reference/run/
 	if _, err := os.Stat("/.dockerenv"); err == nil {
 		return EnvDocker
@@ -119,9 +111,7 @@ func detectEnvKind() EnvKind {
 		return EnvDocker
 	}
 
-	// --- LXC ------------------------------------------------------------------
-	// LXC sets container=lxc in PID 1's environment and uses cgroup paths
-	// containing "lxc".
+	// LXC sets container=lxc in PID 1's environment and uses "lxc" cgroup paths.
 	if strings.Contains(cgroupContent, "/lxc/") || strings.Contains(cgroupContent, "lxc-") {
 		return EnvLXC
 	}
@@ -129,10 +119,7 @@ func detectEnvKind() EnvKind {
 		return EnvLXC
 	}
 
-	// --- VM -------------------------------------------------------------------
-	// Read the DMI product name exposed by the kernel via sysfs. Known
-	// hypervisor strings are from the SMBIOS vendor table and well-established
-	// practice in cloud-detection libraries.
+	// The DMI product name identifies the hypervisor.
 	// src: https://www.kernel.org/doc/html/latest/admin-guide/acpi/index.html
 	// src: https://cloud-hypervisor.azurewebsites.net/ (product name conventions)
 	dmiName := readFileString("/sys/class/dmi/id/product_name")
@@ -152,8 +139,7 @@ func detectEnvKind() EnvKind {
 	return EnvBareMetal
 }
 
-// readCgroupContent reads /proc/1/cgroup (the init process's cgroup membership)
-// which reveals container hierarchy names. Returns empty string on failure.
+// readCgroupContent reads /proc/1/cgroup, which shows container names. It returns "" on failure.
 // src: https://docs.kernel.org/admin-guide/cgroup-v2.html
 func readCgroupContent() string {
 	b, err := os.ReadFile("/proc/1/cgroup")
@@ -163,14 +149,13 @@ func readCgroupContent() string {
 	return string(b)
 }
 
-// lxcInEnviron checks whether /proc/1/environ contains "container=lxc".
-// Best-effort: returns false on permission or parse error.
+// lxcInEnviron reports whether /proc/1/environ contains "container=lxc". It returns false on any error.
 func lxcInEnviron() bool {
 	b, err := os.ReadFile("/proc/1/environ")
 	if err != nil {
 		return false
 	}
-	// environ is NUL-delimited key=value pairs.
+	// environ entries are NUL-delimited.
 	for _, entry := range bytes.Split(b, []byte{0}) {
 		if string(entry) == "container=lxc" {
 			return true
@@ -179,7 +164,7 @@ func lxcInEnviron() bool {
 	return false
 }
 
-// readFileString reads a file and returns its trimmed content, or "" on error.
+// readFileString returns the trimmed file content, or "" on error.
 func readFileString(path string) string {
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -188,8 +173,7 @@ func readFileString(path string) string {
 	return strings.TrimSpace(string(b))
 }
 
-// Environment returns the detected execution environment. Detection is
-// best-effort and never fails — unknown conditions return EnvUnknown with nil.
+// Environment returns the detected environment. It never fails.
 // src: https://docs.kernel.org/admin-guide/cgroup-v2.html
 // src: https://www.postgresql.org/docs/current/kernel-resources.html
 func (LocalInspector) Environment() (Environment, error) {
@@ -199,17 +183,14 @@ func (LocalInspector) Environment() (Environment, error) {
 	}, nil
 }
 
-// EffectiveMemoryBytes returns the memory limit applicable to processes in
-// this cgroup hierarchy. When the cgroup limit constrains memory below the
-// host total, it returns (limit, true, nil). Otherwise it returns
-// (hostMemTotal, false, nil).
+// EffectiveMemoryBytes returns (limit, true, nil) when the cgroup limit is below
+// host RAM, else (hostMemTotal, false, nil).
 //
-// Cgroup v2: reads /sys/fs/cgroup/memory.max. The sentinel value "max"
-// means unlimited.
+// Cgroup v2 reads /sys/fs/cgroup/memory.max, where "max" means unlimited.
 // src: https://docs.kernel.org/admin-guide/cgroup-v2.html#memory-interface-files
 //
-// Cgroup v1: reads /sys/fs/cgroup/memory/memory.limit_in_bytes. A value
-// near math.MaxInt64 (the kernel uses 0x7FFFFFFFFFFFF000) means unlimited.
+// Cgroup v1 reads /sys/fs/cgroup/memory/memory.limit_in_bytes, where a value near
+// math.MaxInt64 means unlimited.
 // src: https://www.kernel.org/doc/html/latest/admin-guide/cgroup-v1/memory.html
 func (li LocalInspector) EffectiveMemoryBytes() (uint64, bool, error) {
 	hostMem, err := li.Memory()
@@ -222,12 +203,10 @@ func (li LocalInspector) EffectiveMemoryBytes() (uint64, bool, error) {
 	case 2:
 		raw := readFileString("/sys/fs/cgroup/memory.max")
 		if raw == "" || raw == "max" {
-			// "max" means no limit — use host RAM.
 			return hostTotal, false, nil
 		}
 		limit, err := strconv.ParseUint(raw, 10, 64)
 		if err != nil {
-			// Unparseable → fall back to host total.
 			return hostTotal, false, nil
 		}
 		if limit < hostTotal {
@@ -244,9 +223,8 @@ func (li LocalInspector) EffectiveMemoryBytes() (uint64, bool, error) {
 		if err != nil {
 			return hostTotal, false, nil
 		}
-		// The kernel sets the unlimited sentinel to a page-aligned value just
-		// below 2^63 (typically 0x7FFFFFFFFFFFF000 = 9223372036854771712 bytes).
-		// Any limit >= half of 2^63 is treated as "unlimited".
+		// The kernel's "unlimited" value is page-aligned just below 2^63 (typically
+		// 0x7FFFFFFFFFFFF000). Any limit >= 2^62 counts as unlimited.
 		// src: https://www.kernel.org/doc/html/latest/admin-guide/cgroup-v1/memory.html
 		const cgroupV1Unlimited = uint64(1<<63 - 1)
 		if limit >= cgroupV1Unlimited/2 {
@@ -258,21 +236,16 @@ func (li LocalInspector) EffectiveMemoryBytes() (uint64, bool, error) {
 		return hostTotal, false, nil
 	}
 
-	// No cgroup hierarchy recognised — use host total.
 	return hostTotal, false, nil
 }
 
-// EffectiveCPUs returns the CPU quota available to this process. When a
-// cgroup CPU quota is configured and resolves to fewer CPUs than the host
-// provides, it returns (quota/period, true, nil). Otherwise it returns
-// (float64(runtime.NumCPU()), false, nil).
+// EffectiveCPUs returns (quota/period, true, nil) when a cgroup CPU quota is below
+// the host CPU count, else (float64(runtime.NumCPU()), false, nil).
 //
-// Cgroup v2: reads /sys/fs/cgroup/cpu.max, format "<quota> <period>" where
-// quota may be "max" (unlimited).
+// Cgroup v2 reads /sys/fs/cgroup/cpu.max as "<quota> <period>", where quota may be "max".
 // src: https://docs.kernel.org/admin-guide/cgroup-v2.html#cpu-interface-files
 //
-// Cgroup v1: reads /sys/fs/cgroup/cpu/cpu.cfs_quota_us and
-// /sys/fs/cgroup/cpu/cpu.cfs_period_us. A quota of -1 means unlimited.
+// Cgroup v1 reads cpu.cfs_quota_us and cpu.cfs_period_us in /sys/fs/cgroup/cpu/. A quota of -1 means unlimited.
 // src: https://www.kernel.org/doc/html/latest/scheduler/sched-bwc.html
 func (LocalInspector) EffectiveCPUs() (float64, bool, error) {
 	hostCPUs := float64(runtime.NumCPU())
@@ -326,9 +299,7 @@ func (LocalInspector) EffectiveCPUs() (float64, bool, error) {
 	return hostCPUs, false, nil
 }
 
-// TransparentHugepages reads the active THP policy from the kernel's sysfs
-// interface and returns the bracketed active mode: "always", "madvise", or
-// "never". The file format is e.g. "always [madvise] never".
+// TransparentHugepages returns the bracketed mode from the sysfs file, for example "madvise" from "always [madvise] never".
 // src: https://docs.kernel.org/admin-guide/mm/transhuge.html
 func (LocalInspector) TransparentHugepages() (string, error) {
 	const thpPath = "/sys/kernel/mm/transparent_hugepage/enabled"
@@ -336,7 +307,6 @@ func (LocalInspector) TransparentHugepages() (string, error) {
 	if raw == "" {
 		return "", fmt.Errorf("transparent hugepage file unavailable: %s", thpPath)
 	}
-	// Parse the bracketed active value, e.g. "always [madvise] never".
 	start := strings.Index(raw, "[")
 	end := strings.Index(raw, "]")
 	if start < 0 || end < 0 || end <= start {
@@ -345,14 +315,11 @@ func (LocalInspector) TransparentHugepages() (string, error) {
 	return raw[start+1 : end], nil
 }
 
-// StorageDevices returns block-device information for filesystems pgtuner
-// cares about. It parses /proc/mounts to find the root mount ("/") and reads
-// /sys/block/<device>/queue/rotational to determine if the device is spinning.
-// This is best-effort: an empty slice with nil error is returned whenever the
-// device cannot be determined.
-//
-// src: /proc/mounts format — https://man7.org/linux/man-pages/man5/fstab.5.html
-// src: /sys/block rotational — https://www.kernel.org/doc/html/latest/block/queue-sysfs.html
+// StorageDevices finds the root mount in /proc/mounts and reads
+// /sys/block/<device>/queue/rotational. It returns an empty slice and nil error when the device is unknown.
+
+// src: /proc/mounts format, https://man7.org/linux/man-pages/man5/fstab.5.html
+// src: /sys/block rotational, https://www.kernel.org/doc/html/latest/block/queue-sysfs.html
 func (LocalInspector) StorageDevices() ([]StorageDevice, error) {
 	f, err := os.Open("/proc/mounts")
 	if err != nil {
@@ -360,8 +327,7 @@ func (LocalInspector) StorageDevices() ([]StorageDevice, error) {
 	}
 	defer f.Close()
 
-	// We want the most-specific mount that covers "/" — the last entry in
-	// /proc/mounts that has mount-point "/".
+	// The last "/" entry in /proc/mounts is the effective root mount.
 	var rootDev, rootFS, rootOpts string
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
@@ -393,13 +359,10 @@ func (LocalInspector) StorageDevices() ([]StorageDevice, error) {
 		MountOpts: rootOpts,
 	}
 
-	// Resolve the base device name (strip partition number) to look up sysfs.
-	// e.g. /dev/sda1 → sda, /dev/nvme0n1p1 → nvme0n1
+	// sysfs lists the whole disk, so strip the partition number (/dev/sda1 to sda).
 	base := filepath.Base(rootDev)
 	rotPath := "/sys/block/" + base + "/queue/rotational"
 	if _, err := os.Stat(rotPath); os.IsNotExist(err) {
-		// Try stripping the trailing digit(s) for partition names like sda1 → sda.
-		// For nvme: nvme0n1p1 → nvme0n1 (strip "p" + digits suffix).
 		base = stripPartitionSuffix(base)
 		rotPath = "/sys/block/" + base + "/queue/rotational"
 	}
@@ -407,26 +370,23 @@ func (LocalInspector) StorageDevices() ([]StorageDevice, error) {
 	if rotRaw == "1" {
 		sd.Rotational = true
 	}
-	// rotRaw == "0" → SSD/NVMe, sd.Rotational stays false (the zero value).
 
 	return []StorageDevice{sd}, nil
 }
 
-// stripPartitionSuffix strips a trailing partition number from a block device
-// name so /dev/sda1 → sda, /dev/nvme0n1p1 → nvme0n1.
-// Only the simple cases needed for the root-device lookup are handled.
+// stripPartitionSuffix strips a partition number: sda1 to sda, nvme0n1p1 to nvme0n1.
+// It handles only the simple cases.
 func stripPartitionSuffix(dev string) string {
-	// nvme / mmcblk style: ends in "p<digits>" — strip the "p<digits>" suffix.
+	// nvme and mmcblk names end in "p<digits>".
 	for i := len(dev) - 1; i >= 0; i-- {
 		if dev[i] < '0' || dev[i] > '9' {
 			if i < len(dev)-1 && dev[i] == 'p' {
-				// Potential nvme partition suffix: strip "p<digits>".
 				return dev[:i]
 			}
 			break
 		}
 	}
-	// sd/vd style: ends in digit(s) — strip trailing digits.
+	// sd and vd names end in digits.
 	i := len(dev) - 1
 	for i >= 0 && dev[i] >= '0' && dev[i] <= '9' {
 		i--

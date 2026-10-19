@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OpenRemedy/pgtuner/internal/osinspect"
-	"github.com/OpenRemedy/pgtuner/internal/pg"
-	"github.com/OpenRemedy/pgtuner/pkg/pgtuner"
+	"github.com/soylic/pgtuner/internal/osinspect"
+	"github.com/soylic/pgtuner/internal/pg"
+	"github.com/soylic/pgtuner/pkg/pgtuner"
 )
 
 func runVersion(major, minor int, now time.Time) []pgtuner.Advice {
@@ -20,8 +20,7 @@ func runVersion(major, minor int, now time.Time) []pgtuner.Advice {
 	return VersionCheck{}.Run(context.Background(), p)
 }
 
-// TestVersionPastEOL verifies PG13 with Now=2026-06-03 is flagged Bad.
-// EOL for PG13 was 2025-11-13; the test date is past that.
+// PG13 reached EOL on 2025-11-13.
 func TestVersionPastEOL(t *testing.T) {
 	now := time.Date(2026, 6, 3, 0, 0, 0, 0, time.UTC)
 	got := runVersion(13, 18, now)
@@ -30,8 +29,7 @@ func TestVersionPastEOL(t *testing.T) {
 	}
 }
 
-// TestVersionNearEOL verifies PG14 with Now=2026-06-03 is flagged Warn.
-// EOL for PG14 is 2026-11-12; the test date is within 12 months.
+// PG14 EOL is 2026-11-12, within the 12-month warning window.
 func TestVersionNearEOL(t *testing.T) {
 	now := time.Date(2026, 6, 3, 0, 0, 0, 0, time.UTC)
 	got := runVersion(14, 10, now)
@@ -40,8 +38,7 @@ func TestVersionNearEOL(t *testing.T) {
 	}
 }
 
-// TestVersionHealthy verifies PG17 with Now=2026-06-03 is flagged OK.
-// EOL for PG17 is 2029-11-08; the test date is > 12 months away.
+// PG17 EOL is 2029-11-08, beyond the 12-month warning window.
 func TestVersionHealthy(t *testing.T) {
 	now := time.Date(2026, 6, 3, 0, 0, 0, 0, time.UTC)
 	got := runVersion(17, 4, now)
@@ -50,7 +47,6 @@ func TestVersionHealthy(t *testing.T) {
 	}
 }
 
-// TestVersionUnknownMajor verifies that an unlisted major (PG99) returns Info.
 func TestVersionUnknownMajor(t *testing.T) {
 	now := time.Date(2026, 6, 3, 0, 0, 0, 0, time.UTC)
 	got := runVersion(99, 0, now)

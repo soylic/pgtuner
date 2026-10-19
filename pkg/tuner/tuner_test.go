@@ -5,12 +5,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OpenRemedy/pgtuner/pkg/pgtuner"
+	"github.com/soylic/pgtuner/pkg/pgtuner"
 )
 
-// TestDBFailureAdvice verifies the tagged-Unknown advice produced when a
-// per-database analysis fails. This is the branch taken under -all-databases
-// when a database cannot be connected to or its settings cannot be loaded.
+// TestDBFailureAdvice checks the Unknown advice for a failed per-database analysis.
 func TestDBFailureAdvice(t *testing.T) {
 	err := errors.New("connect: dial tcp: connection refused")
 	a := dbFailureAdvice("payments", err)
@@ -24,8 +22,7 @@ func TestDBFailureAdvice(t *testing.T) {
 	if a.Section != "Per-Database" {
 		t.Errorf("Section: got %q, want %q", a.Section, "Per-Database")
 	}
-	// The message must attribute the failure to the named database and carry the
-	// underlying error so the operator can act on it.
+	// The message names the database and carries the underlying error.
 	if !strings.Contains(a.Message, "payments") {
 		t.Errorf("Message missing database name: %q", a.Message)
 	}

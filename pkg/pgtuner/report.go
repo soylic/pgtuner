@@ -4,10 +4,10 @@ import "time"
 
 // Options configures an Analyze run.
 type Options struct {
-	DSN          string    // libpq DSN; empty falls back to PG* env / ~/.pgpass
-	OSInspect    bool      // when true and running on Linux, gather OS facts
-	Now          time.Time // injected clock for the version check; zero = time.Now()
-	AllDatabases bool      // when true, run per-database checks against every user database
+	DSN          string    // libpq DSN. Empty uses PG* env and ~/.pgpass
+	OSInspect    bool      // collect OS facts (Linux only)
+	Now          time.Time // clock for the version check. Zero means time.Now()
+	AllDatabases bool      // run per-database checks on every user database
 }
 
 // Report is the result of analyzing a server.
@@ -15,11 +15,12 @@ type Report struct {
 	ServerVersion string         `json:"server_version"`
 	Advice        []Advice       `json:"advice"`
 	Summary       map[string]int `json:"summary"` // level name -> count
-	GradeLetter   string         `json:"grade"`   // overall letter grade A–F (see computeGrade); read via Grade()
-	// Databases lists the user databases analyzed under -all-databases, in the
-	// order they were inspected. Empty for a default (single-DB) run.
-	// Per-database advice is also tagged via Advice.Database.
+	GradeLetter   string         `json:"grade"`   // letter grade A to F (see computeGrade). Read it with Grade()
+	// Databases lists the databases analyzed under -all-databases, in inspection order.
 	Databases []string `json:"databases,omitempty"`
+	// Topology and Flavor describe the analyzed server. Both are best-effort and may be nil.
+	Topology *Topology `json:"topology,omitempty"`
+	Flavor   *Flavor   `json:"flavor,omitempty"`
 }
 
 // ExitCode returns 1 if any advice is Bad-level, else 0.
@@ -32,8 +33,7 @@ func (r *Report) ExitCode() int {
 	return 0
 }
 
-// NewReport builds a Report from a server version string and advice list,
-// computing the per-level summary and overall grade.
+// NewReport builds a Report and computes its summary and grade.
 func NewReport(version string, advice []Advice) *Report {
 	sum := make(map[string]int)
 	for _, a := range advice {
@@ -44,8 +44,7 @@ func NewReport(version string, advice []Advice) *Report {
 	return r
 }
 
-// Grade returns the overall letter grade (A–F) for the report. It is a pure
-// function of the report's per-level Summary; see computeGrade for the formula.
+// Grade returns the letter grade. It depends only on Summary (see computeGrade).
 func (r *Report) Grade() string {
 	if r.GradeLetter != "" {
 		return r.GradeLetter
@@ -53,15 +52,9 @@ func (r *Report) Grade() string {
 	return r.computeGrade()
 }
 
-// Penalty weights for the grade formula. Each finding subtracts points from a
-// 100-point starting score, encoding severity priority:
-//   - Bad: a dangerous/high-risk setting, weighted heavily.
-//   - Warn: a suboptimal setting, weighted moderately.
-//   - Info: a low-priority suggestion, weighted lightly.
-//   - Unknown: an undetermined check; a small penalty, because an unknown is a
-//     gap in coverage we cannot rule out — not a confirmed problem.
-//   - OK and Todo: no penalty. OK is a pass; Todo is a tracked improvement that
-//     does not by itself degrade the running server's health.
+// Penalty weights for the grade formula, subtracted from a score of 100.
+// Unknown has a small penalty because it is a coverage gap, not a confirmed problem.
+// OK and Todo have no penalty.
 const (
 	gradePenaltyBad     = 25
 	gradePenaltyWarn    = 8
@@ -69,25 +62,19 @@ const (
 	gradePenaltyUnknown = 3
 )
 
-// Caps on the aggregate Info and Unknown penalties. Info and Unknown findings
-// are low-priority — a report dense with informational suggestions or
-// undetermined coverage gaps must not be able to fail purely on their volume.
-// Capping the combined penalty keeps Bad and Warn as the dominant signals.
+// Caps on the total Info and Unknown penalties keep Bad and Warn dominant.
 const (
 	gradeInfoPenaltyCap    = 10
 	gradeUnknownPenaltyCap = 9
 )
 
-// computeGrade implements the grade formula.
-//
-// Score starts at 100 and loses points per finding, with the aggregate Info and
-// Unknown penalties capped so informational findings cannot dominate:
+// computeGrade implements the grade formula:
 //
 //	infoPenalty    = min(2*Info, 10)
 //	unknownPenalty = min(3*Unknown, 9)
 //	score = 100 - 25*Bad - 8*Warn - infoPenalty - unknownPenalty   (clamped to [0,100])
 //
-// Todo and OK carry no penalty. The score maps to a letter:
+// The score maps to a letter:
 //
 //	A: score >= 90
 //	B: score >= 80
@@ -95,14 +82,8 @@ const (
 //	D: score >= 60
 //	F: score <  60
 //
-// Consequences worth noting:
-//   - An all-OK report scores 100 → A.
-//   - A single Bad alone drops the score to 75 → C (so "any Bad ⇒ grade ≤ C").
-//     Two Bads (50) → F. The heavy Bad weight ensures dangerous settings cannot
-//     hide behind otherwise-clean output.
-//   - The Info and Unknown caps mean that with no Bad and few Warn, a server
-//     cannot score F on informational findings alone: the worst either category
-//     can subtract is its cap (10 and 9 respectively).
+// One Bad scores 75 (C), so any Bad gives a grade of C or lower. Two Bads score 50 (F).
+// With no Bad and few Warn, Info and Unknown findings alone cannot give an F.
 func (r *Report) computeGrade() string {
 	c := func(l Level) int { return r.Summary[l.String()] }
 	infoPenalty := gradePenaltyInfo * c(Info)

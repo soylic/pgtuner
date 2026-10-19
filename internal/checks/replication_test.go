@@ -3,11 +3,9 @@ package checks
 import (
 	"testing"
 
-	"github.com/OpenRemedy/pgtuner/internal/pg"
-	"github.com/OpenRemedy/pgtuner/pkg/pgtuner"
+	"github.com/soylic/pgtuner/internal/pg"
+	"github.com/soylic/pgtuner/pkg/pgtuner"
 )
-
-// ----- evalInactiveSlots -----------------------------------------------------
 
 func TestEvalInactiveSlots_None(t *testing.T) {
 	a := evalInactiveSlots(nil)
@@ -43,10 +41,7 @@ func TestEvalInactiveSlots_MultipleWarn(t *testing.T) {
 	}
 }
 
-// ----- max_wal_senders settings rule -----------------------------------------
-
 func TestMaxWALSenders_Zero(t *testing.T) {
-	// Simulate the settings rule: max_wal_senders=0 → Info
 	s := pg.NewSettings(map[string]string{
 		"max_wal_senders": "0",
 	})
@@ -64,7 +59,6 @@ func TestMaxWALSenders_Zero(t *testing.T) {
 }
 
 func TestMaxWALSenders_Nonzero(t *testing.T) {
-	// max_wal_senders=10 → no Info from that rule
 	s := pg.NewSettings(map[string]string{
 		"max_wal_senders": "10",
 	})
@@ -77,8 +71,6 @@ func TestMaxWALSenders_Nonzero(t *testing.T) {
 		t.Fatalf("expected no advice for max_wal_senders=10, got %v", levelsOf(advice))
 	}
 }
-
-// ----- evalRoleInfo ----------------------------------------------------------
 
 func TestEvalRoleInfo_Primary(t *testing.T) {
 	a := evalRoleInfo(pg.Role{Role: pg.RolePrimary, ConnectedStandbys: 2})
@@ -120,10 +112,7 @@ func TestEvalRoleInfo_Unknown(t *testing.T) {
 	}
 }
 
-// ----- evalReplicationLag ----------------------------------------------------
-
 func TestEvalReplicationLag_NoRows_NoAdvice(t *testing.T) {
-	// No standbys → no lag advice.
 	out := evalReplicationLag(nil, "")
 	if len(out) != 0 {
 		t.Fatalf("expected no advice for no replica rows, got %v", levelsOf(out))
@@ -158,8 +147,6 @@ func TestEvalReplicationLag_AtThreshold_NoAdvice(t *testing.T) {
 }
 
 func TestEvalReplicationLag_AboveThreshold_Warn(t *testing.T) {
-	// Standby with replay_lag > 30s → Warn.
-	// src: https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STAT-REPLICATION-VIEW
 	lag := 45.0
 	rows := []ReplicaRow{
 		{ApplicationName: "replica1", SyncState: "async", ReplayLagSecs: &lag},
@@ -171,7 +158,6 @@ func TestEvalReplicationLag_AboveThreshold_Warn(t *testing.T) {
 }
 
 func TestEvalReplicationLag_NullLag_NoAdvice(t *testing.T) {
-	// NULL replay_lag (standby hasn't replayed yet) → no lag Warn.
 	rows := []ReplicaRow{
 		{ApplicationName: "replica1", SyncState: "async", ReplayLagSecs: nil},
 	}
@@ -182,8 +168,6 @@ func TestEvalReplicationLag_NullLag_NoAdvice(t *testing.T) {
 }
 
 func TestEvalReplicationLag_SyncNamesSet_NoSyncStandby_Warn(t *testing.T) {
-	// synchronous_standby_names is set but no standby is in sync state → Warn.
-	// src: https://www.postgresql.org/docs/current/runtime-config-replication.html#GUC-SYNCHRONOUS-STANDBY-NAMES
 	lag := 5.0
 	rows := []ReplicaRow{
 		{ApplicationName: "replica1", SyncState: "async", ReplayLagSecs: &lag},
@@ -195,7 +179,6 @@ func TestEvalReplicationLag_SyncNamesSet_NoSyncStandby_Warn(t *testing.T) {
 }
 
 func TestEvalReplicationLag_SyncNamesSet_HasSyncStandby_NoWarn(t *testing.T) {
-	// synchronous_standby_names is set and a standby is in sync state → no extra Warn.
 	lag := 5.0
 	rows := []ReplicaRow{
 		{ApplicationName: "replica1", SyncState: "sync", ReplayLagSecs: &lag},
@@ -209,7 +192,6 @@ func TestEvalReplicationLag_SyncNamesSet_HasSyncStandby_NoWarn(t *testing.T) {
 }
 
 func TestEvalReplicationLag_EmptySyncNames_NoWarn(t *testing.T) {
-	// synchronous_standby_names="" (empty) → no sync-names Warn even with async standbys.
 	lag := 5.0
 	rows := []ReplicaRow{
 		{ApplicationName: "replica1", SyncState: "async", ReplayLagSecs: &lag},
@@ -220,10 +202,7 @@ func TestEvalReplicationLag_EmptySyncNames_NoWarn(t *testing.T) {
 	}
 }
 
-// ----- evalWalLevelVsLogical -------------------------------------------------
-
 func TestEvalWalLevelVsLogical_NoLogical_NoAdvice(t *testing.T) {
-	// No logical slots, no publications → no advice regardless of wal_level.
 	a := evalWalLevelVsLogical("replica", 0, 0)
 	if a != nil {
 		t.Fatalf("expected nil with no logical slots or publications, got %+v", a)
@@ -231,8 +210,6 @@ func TestEvalWalLevelVsLogical_NoLogical_NoAdvice(t *testing.T) {
 }
 
 func TestEvalWalLevelVsLogical_LogicalSlots_LevelLogical_NoAdvice(t *testing.T) {
-	// Logical slots present and wal_level=logical → no advice.
-	// src: https://www.postgresql.org/docs/current/runtime-config-wal.html#GUC-WAL-LEVEL
 	a := evalWalLevelVsLogical("logical", 2, 0)
 	if a != nil {
 		t.Fatalf("expected nil when wal_level=logical, got %+v", a)
@@ -240,8 +217,6 @@ func TestEvalWalLevelVsLogical_LogicalSlots_LevelLogical_NoAdvice(t *testing.T) 
 }
 
 func TestEvalWalLevelVsLogical_LogicalSlots_LevelReplica_Bad(t *testing.T) {
-	// Logical slots present but wal_level=replica → Bad.
-	// src: https://www.postgresql.org/docs/current/runtime-config-wal.html#GUC-WAL-LEVEL
 	a := evalWalLevelVsLogical("replica", 2, 0)
 	if a == nil || a.Level != pgtuner.Bad {
 		t.Fatalf("expected Bad when logical slots present and wal_level=replica, got %+v", a)
@@ -249,7 +224,6 @@ func TestEvalWalLevelVsLogical_LogicalSlots_LevelReplica_Bad(t *testing.T) {
 }
 
 func TestEvalWalLevelVsLogical_Publications_LevelMinimal_Bad(t *testing.T) {
-	// Publications present but wal_level=minimal → Bad.
 	a := evalWalLevelVsLogical("minimal", 0, 3)
 	if a == nil || a.Level != pgtuner.Bad {
 		t.Fatalf("expected Bad when publications present and wal_level=minimal, got %+v", a)
@@ -257,18 +231,13 @@ func TestEvalWalLevelVsLogical_Publications_LevelMinimal_Bad(t *testing.T) {
 }
 
 func TestEvalWalLevelVsLogical_BothPresent_LevelLogical_NoAdvice(t *testing.T) {
-	// Both logical slots and publications, wal_level=logical → no advice.
 	a := evalWalLevelVsLogical("logical", 1, 2)
 	if a != nil {
 		t.Fatalf("expected nil when wal_level=logical with both logical slots and publications, got %+v", a)
 	}
 }
 
-// ----- evalStandbyArchiveDelay -----------------------------------------------
-
 func TestEvalStandbyArchiveDelay_Zero_Info(t *testing.T) {
-	// max_standby_archive_delay=0 → immediate cancellation → Info.
-	// src: https://www.postgresql.org/docs/current/runtime-config-replication.html#GUC-MAX-STANDBY-ARCHIVE-DELAY
 	out := evalStandbyArchiveDelay("0")
 	if len(out) == 0 || out[0].Level != pgtuner.Info {
 		t.Fatalf("expected Info for max_standby_archive_delay=0, got %v", levelsOf(out))
@@ -279,7 +248,6 @@ func TestEvalStandbyArchiveDelay_Zero_Info(t *testing.T) {
 }
 
 func TestEvalStandbyArchiveDelay_Positive_NoAdvice(t *testing.T) {
-	// max_standby_archive_delay=30000 (30s) → healthy → no advice.
 	out := evalStandbyArchiveDelay("30000")
 	if len(out) != 0 {
 		t.Fatalf("expected no advice for positive delay, got %v", levelsOf(out))
@@ -294,11 +262,7 @@ func TestEvalStandbyArchiveDelay_MinusOne_NoAdvice(t *testing.T) {
 	}
 }
 
-// ----- evalStandbyStreamingDelayHigh -----------------------------------------
-
 func TestEvalStandbyStreamingDelayHigh_MinusOne_Info(t *testing.T) {
-	// max_standby_streaming_delay=-1 (wait forever) → Info.
-	// src: https://www.postgresql.org/docs/current/runtime-config-replication.html#GUC-MAX-STANDBY-STREAMING-DELAY
 	out := evalStandbyStreamingDelayHigh(-1)
 	if len(out) == 0 || out[0].Level != pgtuner.Info {
 		t.Fatalf("expected Info for delay=-1, got %v", levelsOf(out))
@@ -306,14 +270,12 @@ func TestEvalStandbyStreamingDelayHigh_MinusOne_Info(t *testing.T) {
 	if out[0].Title == "" || out[0].Message == "" {
 		t.Fatal("expected non-empty title and message")
 	}
-	// Message should mention "wait forever"
 	if !containsStr(out[0].Message, "wait forever") {
 		t.Errorf("expected message to mention 'wait forever', got: %s", out[0].Message)
 	}
 }
 
 func TestEvalStandbyStreamingDelayHigh_AboveThreshold_Info(t *testing.T) {
-	// 301 000 ms > 300 000 ms threshold → Info.
 	out := evalStandbyStreamingDelayHigh(301_000)
 	if len(out) == 0 || out[0].Level != pgtuner.Info {
 		t.Fatalf("expected Info for delay=301000ms (above threshold), got %v", levelsOf(out))
@@ -329,7 +291,6 @@ func TestEvalStandbyStreamingDelayHigh_AtThreshold_NoAdvice(t *testing.T) {
 }
 
 func TestEvalStandbyStreamingDelayHigh_Positive_NoAdvice(t *testing.T) {
-	// 30 000 ms (30s) → well within range → no advice.
 	out := evalStandbyStreamingDelayHigh(30_000)
 	if len(out) != 0 {
 		t.Fatalf("expected no advice for delay=30000ms, got %v", levelsOf(out))
@@ -345,11 +306,7 @@ func TestEvalStandbyStreamingDelayHigh_Zero_NoAdvice(t *testing.T) {
 	}
 }
 
-// ----- evalHotStandbyFeedbackOn -----------------------------------------------
-
 func TestEvalHotStandbyFeedbackOn_True_Info(t *testing.T) {
-	// hot_standby_feedback=on → Info noting the bloat tradeoff.
-	// src: https://www.postgresql.org/docs/current/runtime-config-replication.html#GUC-HOT-STANDBY-FEEDBACK
 	out := evalHotStandbyFeedbackOn(true)
 	if len(out) == 0 || out[0].Level != pgtuner.Info {
 		t.Fatalf("expected Info for hot_standby_feedback=on, got %v", levelsOf(out))
@@ -360,14 +317,12 @@ func TestEvalHotStandbyFeedbackOn_True_Info(t *testing.T) {
 }
 
 func TestEvalHotStandbyFeedbackOn_False_NoAdvice(t *testing.T) {
-	// hot_standby_feedback=off → no advice from this function (handled elsewhere).
 	out := evalHotStandbyFeedbackOn(false)
 	if len(out) != 0 {
 		t.Fatalf("expected no advice for hot_standby_feedback=off, got %v", levelsOf(out))
 	}
 }
 
-// containsStr is a small helper used by standby tests.
 func containsStr(s, sub string) bool {
 	return len(s) >= len(sub) && func() bool {
 		for i := 0; i <= len(s)-len(sub); i++ {

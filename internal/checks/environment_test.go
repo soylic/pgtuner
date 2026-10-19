@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OpenRemedy/pgtuner/internal/osinspect"
-	"github.com/OpenRemedy/pgtuner/internal/pg"
-	"github.com/OpenRemedy/pgtuner/pkg/pgtuner"
+	"github.com/soylic/pgtuner/internal/osinspect"
+	"github.com/soylic/pgtuner/internal/pg"
+	"github.com/soylic/pgtuner/pkg/pgtuner"
 )
 
 func runEnvironment(os osinspect.Inspector) []pgtuner.Advice {
@@ -46,7 +46,6 @@ func TestEnvironmentBareMetalNoConstraint(t *testing.T) {
 		mem:    osinspect.Memory{TotalBytes: hostMem},
 	})
 
-	// Must contain at least one Info about the environment kind.
 	found := false
 	for _, a := range got {
 		if a.Level == pgtuner.Info && strings.Contains(strings.ToLower(a.Message+a.Title), "bare-metal") {
@@ -57,7 +56,6 @@ func TestEnvironmentBareMetalNoConstraint(t *testing.T) {
 		t.Errorf("expected Info mentioning bare-metal, got %v", got)
 	}
 
-	// Must NOT contain a constrained-memory advisory.
 	for _, a := range got {
 		if strings.Contains(a.Message, "cgroup memory limit") {
 			t.Errorf("unexpected constrained-memory advisory on bare-metal host: %v", a.Message)
@@ -69,7 +67,7 @@ func TestEnvironmentBareMetalNoConstraint(t *testing.T) {
 // memory limit less than host RAM → Info about the effective limit.
 func TestEnvironmentContainerConstrainedMemory(t *testing.T) {
 	const hostMem = 32 * 1024 * 1024 * 1024  // 32 GiB host
-	const cgroupMem = 4 * 1024 * 1024 * 1024  // 4 GiB cgroup limit
+	const cgroupMem = 4 * 1024 * 1024 * 1024 // 4 GiB cgroup limit
 	got := runEnvironment(fakeOS{
 		env:               osinspect.Environment{Kind: osinspect.EnvDocker, CgroupVersion: 2},
 		effMem:            cgroupMem,
@@ -77,7 +75,6 @@ func TestEnvironmentContainerConstrainedMemory(t *testing.T) {
 		mem:               osinspect.Memory{TotalBytes: hostMem},
 	})
 
-	// Must have an Info mentioning the cgroup limit.
 	found := false
 	for _, a := range got {
 		if a.Level == pgtuner.Info && strings.Contains(a.Message, "cgroup memory limit") {

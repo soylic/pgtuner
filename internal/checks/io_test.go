@@ -4,12 +4,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/OpenRemedy/pgtuner/internal/osinspect"
-	"github.com/OpenRemedy/pgtuner/internal/pg"
-	"github.com/OpenRemedy/pgtuner/pkg/pgtuner"
+	"github.com/soylic/pgtuner/internal/osinspect"
+	"github.com/soylic/pgtuner/internal/pg"
+	"github.com/soylic/pgtuner/pkg/pgtuner"
 )
-
-// --- evalIO unit tests --------------------------------------------------------
 
 // TestEvalIOIdle: all-zero counters → no advice (OK path handled by Run).
 func TestEvalIOIdle(t *testing.T) {
@@ -111,8 +109,6 @@ func TestEvalIOEmptyRows(t *testing.T) {
 	}
 }
 
-// --- PG<16 path unit test -----------------------------------------------------
-
 // TestIOCheckPrePG16NoQuery: Version 15, Conn nil → exactly one Info, no panic.
 // The PG<16 path must return early without touching Conn.
 func TestIOCheckPrePG16NoQuery(t *testing.T) {
@@ -130,8 +126,6 @@ func TestIOCheckPrePG16NoQuery(t *testing.T) {
 		t.Fatalf("expected Info for PG<16 path, got %v", got[0].Level)
 	}
 }
-
-// --- evalIO writes unit test ---------------------------------------------------
 
 // TestEvalIOClientWriteHighWarn: writes ≥ threshold in normal context → Warn.
 func TestEvalIOClientWriteHighWarn(t *testing.T) {
@@ -170,8 +164,6 @@ func TestEvalIOBulkreadWritesIgnored(t *testing.T) {
 		}
 	}
 }
-
-// --- evalIOMethodPG18 unit tests -----------------------------------------------
 
 // TestEvalIOMethodPG18DefaultWorker: io_method=worker (the PG18 default) → no advice.
 // A stock PG18 server boots with io_method=worker and must not generate spurious Info.

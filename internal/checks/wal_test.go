@@ -5,12 +5,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OpenRemedy/pgtuner/internal/osinspect"
-	"github.com/OpenRemedy/pgtuner/internal/pg"
-	"github.com/OpenRemedy/pgtuner/pkg/pgtuner"
+	"github.com/soylic/pgtuner/internal/osinspect"
+	"github.com/soylic/pgtuner/internal/pg"
+	"github.com/soylic/pgtuner/pkg/pgtuner"
 )
 
-// helper: run WAL check with given settings and PG version.
 func runWAL(settings map[string]string, major, minor int) []pgtuner.Advice {
 	p := &Probe{
 		Settings: pg.NewSettings(settings),
@@ -20,18 +19,16 @@ func runWAL(settings map[string]string, major, minor int) []pgtuner.Advice {
 	return WALCheck{}.Run(context.Background(), p)
 }
 
-// healthyWALSettings returns a map of all-good WAL settings.
 func healthyWALSettings() map[string]string {
 	return map[string]string{
-		"fsync":                "on",
-		"full_page_writes":     "on",
-		"synchronous_commit":   "on",
-		"wal_compression":      "lz4",
-		"wal_level":            "replica",
+		"fsync":              "on",
+		"full_page_writes":   "on",
+		"synchronous_commit": "on",
+		"wal_compression":    "lz4",
+		"wal_level":          "replica",
 	}
 }
 
-// TestWALFsyncOff: fsync=off → Bad.
 func TestWALFsyncOff(t *testing.T) {
 	s := healthyWALSettings()
 	s["fsync"] = "off"
@@ -41,7 +38,6 @@ func TestWALFsyncOff(t *testing.T) {
 	}
 }
 
-// TestWALFullPageWritesOff: full_page_writes=off → Bad.
 func TestWALFullPageWritesOff(t *testing.T) {
 	s := healthyWALSettings()
 	s["full_page_writes"] = "off"
@@ -51,7 +47,6 @@ func TestWALFullPageWritesOff(t *testing.T) {
 	}
 }
 
-// TestWALSynchronousCommitOff: synchronous_commit=off → Info.
 func TestWALSynchronousCommitOff(t *testing.T) {
 	s := healthyWALSettings()
 	s["synchronous_commit"] = "off"
@@ -61,7 +56,6 @@ func TestWALSynchronousCommitOff(t *testing.T) {
 	}
 }
 
-// TestWALCompressionOffPG15: wal_compression=off on PG15 → Info mentioning lz4/zstd.
 func TestWALCompressionOffPG15(t *testing.T) {
 	s := healthyWALSettings()
 	s["wal_compression"] = "off"
@@ -78,7 +72,6 @@ func TestWALCompressionOffPG15(t *testing.T) {
 	}
 }
 
-// TestWALCompressionOffPG14: wal_compression=off on PG14 → Info mentioning lz4 but NOT zstd.
 func TestWALCompressionOffPG14(t *testing.T) {
 	s := healthyWALSettings()
 	s["wal_compression"] = "off"
@@ -98,7 +91,6 @@ func TestWALCompressionOffPG14(t *testing.T) {
 	}
 }
 
-// TestWALCompressionOffPrePG14: wal_compression=off on PG13 → Info without lz4/zstd.
 func TestWALCompressionOffPrePG14(t *testing.T) {
 	s := healthyWALSettings()
 	s["wal_compression"] = "off"
@@ -118,7 +110,6 @@ func TestWALCompressionOffPrePG14(t *testing.T) {
 	}
 }
 
-// TestWALLevelMinimal: wal_level=minimal → Info.
 func TestWALLevelMinimal(t *testing.T) {
 	s := healthyWALSettings()
 	s["wal_level"] = "minimal"
@@ -128,7 +119,6 @@ func TestWALLevelMinimal(t *testing.T) {
 	}
 }
 
-// TestWALAllHealthy: healthy settings → single OK.
 func TestWALAllHealthy(t *testing.T) {
 	got := runWAL(healthyWALSettings(), 16, 0)
 	if !hasLevel(got, pgtuner.OK) {

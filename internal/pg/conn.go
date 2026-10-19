@@ -9,7 +9,7 @@ import (
 
 // Options carries connection parameters for Connect.
 type Options struct {
-	DSN string // libpq-style; partial/empty falls back to PG* env + ~/.pgpass via pgx
+	DSN string // libpq-style. Empty or partial values fall back to PG* env and ~/.pgpass
 }
 
 // Conn wraps a pgx connection and exposes the detected server version.
@@ -18,8 +18,7 @@ type Conn struct {
 	Version ServerVersion
 }
 
-// Connect opens a new PostgreSQL connection, detects the server version, and
-// returns a ready-to-use Conn. The caller must call Close when done.
+// Connect opens a connection and detects the server version. The caller must call Close.
 func Connect(ctx context.Context, o Options) (*Conn, error) {
 	cfg, err := pgx.ParseConfig(o.DSN)
 	if err != nil {
@@ -28,10 +27,8 @@ func Connect(ctx context.Context, o Options) (*Conn, error) {
 	return connectConfig(ctx, cfg)
 }
 
-// ConnectDB opens a connection using the same parameters as the given DSN but
-// with the database name overridden to dbname. It is used for per-database
-// analysis (-all-databases), where each user database is inspected over its own
-// connection. The caller must call Close when done.
+// ConnectDB connects with the DSN parameters but with the database set to dbname.
+// -all-databases uses it to inspect each database. The caller must call Close.
 func ConnectDB(ctx context.Context, dsn, dbname string) (*Conn, error) {
 	cfg, err := pgx.ParseConfig(dsn)
 	if err != nil {
@@ -41,7 +38,6 @@ func ConnectDB(ctx context.Context, dsn, dbname string) (*Conn, error) {
 	return connectConfig(ctx, cfg)
 }
 
-// connectConfig connects with the given config and detects the server version.
 func connectConfig(ctx context.Context, cfg *pgx.ConnConfig) (*Conn, error) {
 	pc, err := pgx.ConnectConfig(ctx, cfg)
 	if err != nil {
@@ -60,8 +56,7 @@ func connectConfig(ctx context.Context, cfg *pgx.ConnConfig) (*Conn, error) {
 	return &Conn{pgx: pc, Version: v}, nil
 }
 
-// ListUserDatabases returns the names of connectable, non-template databases in
-// the cluster, ordered by name. Used by -all-databases.
+// ListUserDatabases returns connectable, non-template database names, ordered by name.
 // src: https://www.postgresql.org/docs/current/catalog-pg-database.html
 func ListUserDatabases(ctx context.Context, c *Conn) ([]string, error) {
 	const sql = "SELECT datname FROM pg_database WHERE NOT datistemplate AND datallowconn ORDER BY datname"
@@ -81,15 +76,12 @@ func ListUserDatabases(ctx context.Context, c *Conn) ([]string, error) {
 	return out, rows.Err()
 }
 
-// Close closes the underlying pgx connection.
 func (c *Conn) Close(ctx context.Context) { _ = c.pgx.Close(ctx) }
 
-// Query runs a query on the underlying connection. Used by the pg-stats helpers and checks.
 func (c *Conn) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 	return c.pgx.Query(ctx, sql, args...)
 }
 
-// QueryRow runs a single-row query on the underlying connection.
 func (c *Conn) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
 	return c.pgx.QueryRow(ctx, sql, args...)
 }

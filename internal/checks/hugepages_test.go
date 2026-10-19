@@ -5,12 +5,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OpenRemedy/pgtuner/internal/osinspect"
-	"github.com/OpenRemedy/pgtuner/internal/pg"
-	"github.com/OpenRemedy/pgtuner/pkg/pgtuner"
+	"github.com/soylic/pgtuner/internal/osinspect"
+	"github.com/soylic/pgtuner/internal/pg"
+	"github.com/soylic/pgtuner/pkg/pgtuner"
 )
 
-// helper: run hugepages check.
 func runHugePages(settings map[string]string, os osinspect.Inspector, major, minor int) []pgtuner.Advice {
 	p := &Probe{
 		Settings: pg.NewSettings(settings),

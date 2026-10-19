@@ -4,48 +4,35 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/OpenRemedy/pgtuner/internal/pg"
-	"github.com/OpenRemedy/pgtuner/pkg/pgtuner"
+	"github.com/soylic/pgtuner/internal/pg"
+	"github.com/soylic/pgtuner/pkg/pgtuner"
 )
 
-// docCheckpointStats is the canonical reference for checkpoint monitoring columns.
-// src: https://www.postgresql.org/docs/current/monitoring-stats.html
 const docCheckpointStats = "https://www.postgresql.org/docs/current/monitoring-stats.html"
 
-// docCheckpointTuning is the canonical reference for checkpoint GUCs.
-// src: https://www.postgresql.org/docs/current/runtime-config-wal.html
 const docCheckpointTuning = "https://www.postgresql.org/docs/current/runtime-config-wal.html"
 
-// checkpointReqRatioWarnThreshold is the fraction of requested (non-timed)
-// checkpoints above which we warn. If more than 30% of checkpoints are
-// requested by backends (rather than timed), WAL segments are being consumed
-// faster than the checkpoint schedule can drain them, indicating max_wal_size
-// is too small.
+// checkpointReqRatioWarnThreshold: above 30 % requested checkpoints, WAL fills
+// faster than the schedule drains it, which indicates a small max_wal_size.
 // src: https://www.postgresql.org/docs/current/monitoring-stats.html (pg_stat_bgwriter / pg_stat_checkpointer)
 const checkpointReqRatioWarnThreshold = 0.30 // 30 %
 
-// checkpointCompletionTargetDefault is the PostgreSQL default since PG14.
-// Values below 0.9 cause checkpoints to complete too quickly, generating
-// more write pressure at checkpoint time.
+// checkpointCompletionTargetDefault is the default since PG14. Lower values
+// finish checkpoints sooner and raise write pressure.
 // src: https://www.postgresql.org/docs/current/runtime-config-wal.html#GUC-CHECKPOINT-COMPLETION-TARGET
 const checkpointCompletionTargetDefault = 0.9
 
 // CheckpointsCheck evaluates checkpoint frequency and completion-target settings.
-// It issues a version-branched query: PG≥17 uses pg_stat_checkpointer (the
-// checkpoint columns were moved out of pg_stat_bgwriter in PG17 and renamed);
-// PG<17 uses pg_stat_bgwriter.
+// PG17 moved and renamed the checkpoint columns from pg_stat_bgwriter to
+// pg_stat_checkpointer.
 // src: https://www.postgresql.org/docs/17/monitoring-stats.html
 type CheckpointsCheck struct{ clusterScoped }
 
 func (CheckpointsCheck) Name() string { return "checkpoints" }
 
-// checkpointQuery returns the version-appropriate SQL to read timed and
-// requested checkpoint counts. This is an unexported helper so it can be
-// directly unit-tested for both PG16→bgwriter and PG17→checkpointer paths.
-//
-// PG≥17: pg_stat_checkpointer.num_timed / num_requested
-// PG<17: pg_stat_bgwriter.checkpoints_timed / checkpoints_req
-//
+// checkpointQuery returns the SQL for timed and requested checkpoint counts.
+// PG17+: pg_stat_checkpointer.num_timed / num_requested.
+// PG<17: pg_stat_bgwriter.checkpoints_timed / checkpoints_req.
 // src: https://www.postgresql.org/docs/17/monitoring-stats.html
 func checkpointQuery(v pg.ServerVersion) string {
 	if v.AtLeast(17, 0) {
@@ -54,50 +41,43 @@ func checkpointQuery(v pg.ServerVersion) string {
 	return "SELECT checkpoints_timed, checkpoints_req FROM pg_stat_bgwriter"
 }
 
-// evalCheckpoints is the pure decision function. It accepts already-fetched
-// checkpoint counters and the checkpoint_completion_target value, and returns
-// advice without touching the database.
+// evalCheckpoints turns checkpoint counters and checkpoint_completion_target into advice.
 func evalCheckpoints(timed, requested int64, completionTarget float64) []pgtuner.Advice {
 	const section = "Checkpoints"
 	var out []pgtuner.Advice
 
 	total := timed + requested
 
-	// --- checkpoint activity --------------------------------------------------
-	// src: https://www.postgresql.org/docs/current/monitoring-stats.html
 	if total == 0 {
 		out = append(out, pgtuner.Advice{
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "No checkpoint activity recorded yet",
-			Message: "No checkpoints have occurred since statistics were last reset. This is normal on a freshly started or stats-reset server.",
+			Message: "The server recorded no checkpoints since statistics were last reset. This is normal on a freshly started or stats-reset server.",
 			DocRef:  docCheckpointStats,
 		})
 	} else {
-		// ratio of requested (non-scheduled) checkpoints to total.
 		ratio := float64(requested) / float64(total)
 		if ratio > checkpointReqRatioWarnThreshold {
 			out = append(out, pgtuner.Advice{
 				Level:   pgtuner.Warn,
 				Section: section,
 				Title:   "Too many requested checkpoints",
-				Message: fmt.Sprintf("%.0f%% of checkpoints are requested by backends (requested=%d, timed=%d, total=%d). Requested checkpoints occur when WAL fills max_wal_size before the scheduled interval, causing write spikes.", ratio*100, requested, timed, total),
-				Detail:  "Raise max_wal_size to allow checkpoints to happen on schedule. Consider also raising checkpoint_timeout if write volume justifies it.",
+				Message: fmt.Sprintf("%.0f%% of checkpoints are requested by backends (requested=%d, timed=%d, total=%d). Requested checkpoints occur when WAL fills max_wal_size before the scheduled interval. This causes write spikes.", ratio*100, requested, timed, total),
+				Detail:  "Raise max_wal_size to let checkpoints run on schedule. Consider also raising checkpoint_timeout if write volume justifies it.",
 				DocRef:  docCheckpointStats,
 			})
 		}
 	}
 
-	// --- checkpoint_completion_target -----------------------------------------
-	// Default is 0.9 since PG14; values below 0.9 concentrate checkpoint writes
-	// into a shorter window, increasing I/O pressure.
+	// Values below the 0.9 default concentrate checkpoint writes into a shorter window.
 	// src: https://www.postgresql.org/docs/current/runtime-config-wal.html#GUC-CHECKPOINT-COMPLETION-TARGET
 	if completionTarget < checkpointCompletionTargetDefault {
 		out = append(out, pgtuner.Advice{
 			Level:   pgtuner.Info,
 			Section: section,
 			Title:   "checkpoint_completion_target is below recommended value",
-			Message: fmt.Sprintf("checkpoint_completion_target=%.2f is below the recommended 0.9 (the default since PostgreSQL 14). A lower value forces checkpoints to complete in a shorter fraction of the checkpoint interval, concentrating disk writes.", completionTarget),
+			Message: fmt.Sprintf("checkpoint_completion_target=%.2f is below the recommended 0.9 (the default since PostgreSQL 14). A lower value forces checkpoints to complete in a shorter fraction of the checkpoint interval. This concentrates disk writes.", completionTarget),
 			Detail:  "Set checkpoint_completion_target=0.9 to spread checkpoint writes over 90% of the checkpoint interval.",
 			DocRef:  docCheckpointTuning,
 		})
@@ -115,8 +95,7 @@ func evalCheckpoints(timed, requested int64, completionTarget float64) []pgtuner
 	return out
 }
 
-// Run performs the version-branched query and returns checkpoint advice.
-// On query or scan failure it returns a single Unknown-level advice.
+// Run returns a single Unknown advice on query or scan failure.
 // It never panics and never returns an error.
 func (CheckpointsCheck) Run(ctx context.Context, p *Probe) []pgtuner.Advice {
 	const section = "Checkpoints"

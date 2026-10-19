@@ -7,16 +7,16 @@ import (
 	"sort"
 )
 
-// Level represents the severity of an Advice finding.
+// Level is the severity of an Advice finding.
 type Level int
 
 const (
-	OK      Level = iota // OK: setting is within recommended parameters.
-	Info                 // Info: low-priority suggestion.
-	Todo                 // Todo: improvement to schedule.
-	Warn                 // Warn: suboptimal configuration.
-	Bad                  // Bad: dangerous or high-risk setting.
-	Unknown              // Unknown: a check could not determine a result.
+	OK      Level = iota // The setting is within recommended values.
+	Info                 // A low-priority suggestion.
+	Todo                 // An improvement to schedule.
+	Warn                 // A suboptimal configuration.
+	Bad                  // A dangerous or high-risk setting.
+	Unknown              // A check could not determine a result.
 )
 
 func (l Level) String() string {
@@ -36,12 +36,10 @@ func (l Level) String() string {
 	}
 }
 
-// MarshalJSON encodes the level as its lowercase string name.
 func (l Level) MarshalJSON() ([]byte, error) {
 	return json.Marshal(l.String())
 }
 
-// UnmarshalJSON decodes a level from its lowercase string name.
 func (l *Level) UnmarshalJSON(b []byte) error {
 	var s string
 	if err := json.Unmarshal(b, &s); err != nil {
@@ -73,17 +71,12 @@ type Advice struct {
 	Title   string `json:"title"`
 	Message string `json:"message"`
 	Detail  string `json:"detail,omitempty"`
-	DocRef  string `json:"doc_ref,omitempty"` // PG docs URL the threshold came from
-	// Database is the user database this finding pertains to. It is set only for
-	// per-database checks run under -all-databases; cluster-wide findings and
-	// default (single-DB) runs leave it empty.
+	DocRef  string `json:"doc_ref,omitempty"` // PG docs URL for the threshold
+	// Database is set only for per-database checks under -all-databases.
 	Database string `json:"database,omitempty"`
 }
 
-// rank maps a Level to its severity rank used for ordering and filtering.
-// Higher means more severe. Unknown ranks above Bad on purpose (see WorstLevel).
-//
-// Ranking (highest → lowest): Unknown(5) > Bad(4) > Warn(3) > Todo(2) > Info(1) > OK(0).
+// rank maps a Level to its severity for filtering. Unknown ranks above Bad (see WorstLevel).
 func rank(l Level) int {
 	switch l {
 	case OK:
@@ -104,11 +97,7 @@ func rank(l Level) int {
 }
 
 // WorstLevel returns the highest-severity level present. Unknown ranks above
-// Bad on purpose: a check that could not complete is surfaced prominently
-// rather than silently treated as low severity (fail-loud). Note that
-// Report.ExitCode keys only off Bad, so an Unknown alone does not fail the CLI.
-//
-// Ranking (highest → lowest): Unknown > Bad > Warn > Todo > Info > OK.
+// Bad so a check that could not finish is not hidden. Report.ExitCode looks only at Bad.
 func WorstLevel(a []Advice) Level {
 	worst := OK
 	for _, x := range a {
@@ -119,8 +108,7 @@ func WorstLevel(a []Advice) Level {
 	return worst
 }
 
-// ParseLevel converts a lowercase level name to a Level. It returns an error
-// for any string that is not one of ok/info/todo/warn/bad/unknown.
+// ParseLevel converts a lowercase level name to a Level.
 func ParseLevel(s string) (Level, error) {
 	switch s {
 	case "ok":
@@ -136,16 +124,12 @@ func ParseLevel(s string) (Level, error) {
 	case "unknown":
 		return Unknown, nil
 	default:
-		return OK, fmt.Errorf("invalid level %q (want one of ok/info/todo/warn/bad/unknown)", s)
+		return OK, fmt.Errorf("invalid level %q (use one of ok/info/todo/warn/bad/unknown)", s)
 	}
 }
 
-// FilterByMinLevel returns the subset of advice whose severity rank is at least
-// the rank of min. With min == OK (rank 0) every item is kept (no filtering).
-// The rank ordering matches WorstLevel: Unknown > Bad > Warn > Todo > Info > OK,
-// so e.g. min == Warn keeps Warn, Bad, and Unknown while dropping Todo/Info/OK.
-// The returned slice preserves the input order (returns a nil slice when
-// nothing matches).
+// FilterByMinLevel keeps advice whose rank is at least the rank of min, in input order.
+// The ranking is Unknown > Bad > Warn > Todo > Info > OK. With min == OK, nothing is dropped.
 func FilterByMinLevel(advice []Advice, min Level) []Advice {
 	minRank := rank(min)
 	if minRank == 0 {
@@ -160,14 +144,10 @@ func FilterByMinLevel(advice []Advice, min Level) []Advice {
 	return out
 }
 
-// SortBySeverity returns a copy of advice ordered by descending severity:
-// Bad → Warn → Todo → Info → OK → Unknown. The sort is stable, so items of
-// equal severity keep their original relative order. Note this ordering differs
-// from rank() used for filtering: Unknown sorts LAST here (so undetermined
-// checks don't dominate the top of a severity-sorted report) even though it
-// ranks highest for WorstLevel/filtering purposes. The input is not mutated.
+// SortBySeverity returns a stable copy of advice ordered Bad, Warn, Todo, Info, OK, Unknown.
+// Unknown sorts last so undetermined checks do not fill the top of the report.
+// This differs from rank(), where Unknown is highest.
 func SortBySeverity(advice []Advice) []Advice {
-	// Display order weight: lower sorts first.
 	weight := func(l Level) int {
 		switch l {
 		case Bad:

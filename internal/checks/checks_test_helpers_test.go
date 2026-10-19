@@ -1,31 +1,20 @@
 package checks
 
-import "github.com/OpenRemedy/pgtuner/internal/osinspect"
+import "github.com/soylic/pgtuner/internal/osinspect"
 
-// fakeOS is a test-only Inspector that returns canned values. Sysctl keys not
-// present in the map return ErrNoOSFacts, mirroring NoopInspector behaviour for
-// unknown keys.
-//
-// New fields for environment/resource awareness:
-//   - env: the Environment to return from Environment(). A zero-value EnvKind
-//     ("") signals "not configured" and causes Environment() to return ErrNoOSFacts.
-//   - effMem / effMemConstrained: values returned by EffectiveMemoryBytes().
-//     When effMem == 0, EffectiveMemoryBytes() returns ErrNoOSFacts.
-//   - effCPUs: value returned by EffectiveCPUs(). When effCPUs == 0,
-//     EffectiveCPUs() returns ErrNoOSFacts.
-//   - thp: string returned by TransparentHugepages(). When "", returns ErrNoOSFacts.
+// fakeOS is a test-only Inspector with canned values. Missing sysctl keys return
+// ErrNoOSFacts, as does a zero env, effMem, effCPUs, or empty thp.
 type fakeOS struct {
 	mem    osinspect.Memory
 	memErr error
 	sysctl map[string]string
 
-	// Environment / resource-awareness fields.
-	env               osinspect.Environment
-	effMem            uint64
-	effMemConstrained bool
-	effCPUs           float64
+	env                osinspect.Environment
+	effMem             uint64
+	effMemConstrained  bool
+	effCPUs            float64
 	effCPUsConstrained bool
-	thp               string
+	thp                string
 }
 
 func (f fakeOS) Memory() (osinspect.Memory, error) { return f.mem, f.memErr }

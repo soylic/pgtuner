@@ -3,10 +3,8 @@ package checks
 import (
 	"testing"
 
-	"github.com/OpenRemedy/pgtuner/pkg/pgtuner"
+	"github.com/soylic/pgtuner/pkg/pgtuner"
 )
-
-// --- evalCacheHitRatio unit tests ---------------------------------------------
 
 // TestCacheHitRatioZeroActivity: no block accesses → Info (not Warn/Bad).
 func TestCacheHitRatioZeroActivity(t *testing.T) {
@@ -52,8 +50,6 @@ func TestCacheHitRatioHealthy(t *testing.T) {
 		}
 	}
 }
-
-// --- evalIndexHitRatio unit tests ---------------------------------------------
 
 // TestIndexHitRatioNullHit: NULL SUM(idx_blks_hit) → no advice.
 func TestIndexHitRatioNullHit(t *testing.T) {
@@ -106,8 +102,6 @@ func TestIndexHitRatioExactBoundary(t *testing.T) {
 		}
 	}
 }
-
-// --- evalTableHitRatio unit tests ---------------------------------------------
 
 // TestTableHitRatioNullHit: NULL SUM(heap_blks_hit) → no advice.
 func TestTableHitRatioNullHit(t *testing.T) {

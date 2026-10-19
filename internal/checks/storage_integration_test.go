@@ -7,9 +7,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/OpenRemedy/pgtuner/internal/osinspect"
-	"github.com/OpenRemedy/pgtuner/internal/pg"
-	"github.com/OpenRemedy/pgtuner/pkg/pgtuner"
+	"github.com/soylic/pgtuner/internal/osinspect"
+	"github.com/soylic/pgtuner/internal/pg"
+	"github.com/soylic/pgtuner/pkg/pgtuner"
 )
 
 func TestStorageIntegration(t *testing.T) {
@@ -37,7 +37,6 @@ func TestStorageIntegration(t *testing.T) {
 		OS:       osinspect.NoopInspector{},
 	}
 
-	// Cluster-wide settings half.
 	gotSettings := StorageSettingsCheck{}.Run(ctx, probe)
 	if len(gotSettings) == 0 {
 		t.Fatal("expected at least one advice from StorageSettingsCheck, got none")
@@ -49,7 +48,6 @@ func TestStorageIntegration(t *testing.T) {
 	}
 	t.Logf("StorageSettingsCheck returned %d advice item(s): %v", len(gotSettings), levelsOf(gotSettings))
 
-	// Per-database temp-file stats half.
 	got := StorageCheck{}.Run(ctx, probe)
 	if len(got) == 0 {
 		t.Fatal("expected at least one advice from StorageCheck, got none")

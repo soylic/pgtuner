@@ -1,6 +1,5 @@
 // Package osinspect provides pluggable OS-level inspection (memory, sysctl)
-// used to enrich tuning advice. Implementations: LocalInspector (reads the
-// local host) and NoopInspector (no facts available).
+// used by tuning advice. LocalInspector reads the local host. NoopInspector returns no facts.
 package osinspect
 
 import "errors"
@@ -16,10 +15,8 @@ type Memory struct {
 	HugePagesFree  uint64 // number of huge pages free
 }
 
-// EnvKind identifies the execution environment the process is running in.
-// Detection is best-effort and based on signals from /proc, /sys, and environment
-// variables as documented by the Linux kernel cgroup/namespace subsystem and
-// container runtime conventions.
+// EnvKind identifies the execution environment. Detection is best-effort and
+// uses signals from /proc, /sys, and environment variables.
 // src: https://docs.kernel.org/admin-guide/cgroup-v2.html
 // src: https://www.postgresql.org/docs/current/kernel-resources.html
 type EnvKind string
@@ -33,59 +30,47 @@ const (
 	EnvUnknown    EnvKind = "unknown"
 )
 
-// Environment describes the execution context: what kind of host (bare-metal,
-// VM, container) and which cgroup API version is active.
-// CgroupVersion is 1, 2, or 0 when it cannot be determined.
+// Environment describes the host kind and the active cgroup version.
 type Environment struct {
 	Kind          EnvKind
 	CgroupVersion int // 1, 2, or 0 if unknown
 }
 
-// StorageDevice holds basic block-device information for a mounted filesystem.
-// Detection is best-effort; callers must tolerate empty slices.
+// StorageDevice describes the block device of a mounted filesystem.
+// Detection is best-effort. Callers must accept empty slices.
 type StorageDevice struct {
 	Device     string
-	Rotational bool   // true = spinning disk (HDD), false = SSD / NVMe
+	Rotational bool // true = spinning disk (HDD), false = SSD / NVMe
 	FSType     string
 	MountOpts  string
 }
 
-// Inspector reads OS-level facts. Implementations must be safe to call when
-// the underlying source is unavailable, returning an error rather than panicking.
+// Inspector reads OS-level facts. When the source is unavailable, it returns an error and does not panic.
 type Inspector interface {
 	Memory() (Memory, error)
 	Sysctl(key string) (string, error) // e.g. "vm.overcommit_memory"
 
-	// Environment returns the detected execution environment (container type,
-	// cgroup version). Best-effort; returns EnvUnknown on detection failure.
+	// Environment returns the detected environment. Best-effort: EnvUnknown on failure.
 	// src: https://docs.kernel.org/admin-guide/cgroup-v2.html
 	Environment() (Environment, error)
 
-	// EffectiveMemoryBytes returns the memory budget applicable to processes in
-	// this environment. When a cgroup memory limit constrains memory below the
-	// host's total RAM, it returns (limit, true, nil). Otherwise it returns
-	// (hostMemTotal, false, nil). Callers should use this value — rather than
-	// Memory().TotalBytes — for sizing ratios, so container-limited deployments
-	// receive correct advice.
+	// EffectiveMemoryBytes returns (limit, true, nil) when a cgroup limit is below
+	// host RAM, else (hostMemTotal, false, nil). Use it instead of Memory().TotalBytes
+	// for sizing ratios so container limits are respected.
 	// src: https://docs.kernel.org/admin-guide/cgroup-v2.html (memory.max)
 	EffectiveMemoryBytes() (limit uint64, constrained bool, err error)
 
-	// EffectiveCPUs returns the CPU budget available to this process. When a
-	// cgroup CPU quota is set and is less than the host's logical CPU count, it
-	// returns (quota/period, true, nil). Otherwise it returns
-	// (float64(runtime.NumCPU()), false, nil).
+	// EffectiveCPUs returns (quota/period, true, nil) when a cgroup CPU quota is
+	// below the logical CPU count, else (float64(runtime.NumCPU()), false, nil).
 	// src: https://docs.kernel.org/admin-guide/cgroup-v2.html (cpu.max)
 	EffectiveCPUs() (cpus float64, constrained bool, err error)
 
-	// TransparentHugepages returns the active THP mode: "always", "madvise", or
-	// "never". The value is the bracketed entry from
-	// /sys/kernel/mm/transparent_hugepage/enabled, e.g. "always [madvise] never"
-	// returns "madvise".
+	// TransparentHugepages returns the active THP mode: "always", "madvise", or "never".
+	// It is the bracketed entry in /sys/kernel/mm/transparent_hugepage/enabled.
 	// src: https://docs.kernel.org/admin-guide/mm/transhuge.html
 	TransparentHugepages() (string, error)
 
-	// StorageDevices returns block-device metadata for the filesystems pgtuner
-	// cares about (at minimum the root mount). Detection is best-effort; an
-	// empty slice with a nil error is valid when devices cannot be determined.
+	// StorageDevices returns block devices for the relevant filesystems (at least the
+	// root mount). An empty slice with a nil error is valid.
 	StorageDevices() ([]StorageDevice, error)
 }

@@ -3,18 +3,14 @@ package checks
 import (
 	"testing"
 
-	"github.com/OpenRemedy/pgtuner/internal/pg"
-	"github.com/OpenRemedy/pgtuner/pkg/pgtuner"
+	"github.com/soylic/pgtuner/internal/pg"
+	"github.com/soylic/pgtuner/pkg/pgtuner"
 )
 
-// helper: run statistics evaluation with a given settings map.
 func runStatistics(settings map[string]string) []pgtuner.Advice {
 	return evalStatistics(pg.NewSettings(settings))
 }
 
-// --- track_io_timing ----------------------------------------------------------
-
-// TestStatisticsTrackIOTimingOff: track_io_timing=off → Info.
 func TestStatisticsTrackIOTimingOff(t *testing.T) {
 	got := runStatistics(map[string]string{
 		"track_io_timing":          "off",
@@ -31,7 +27,6 @@ func TestStatisticsTrackIOTimingOff(t *testing.T) {
 	}
 }
 
-// TestStatisticsTrackIOTimingOn: track_io_timing=on → no track_io_timing advice.
 func TestStatisticsTrackIOTimingOn(t *testing.T) {
 	got := runStatistics(map[string]string{
 		"track_io_timing":          "on",
@@ -45,9 +40,6 @@ func TestStatisticsTrackIOTimingOn(t *testing.T) {
 	}
 }
 
-// --- track_counts -------------------------------------------------------------
-
-// TestStatisticsTrackCountsOff: track_counts=off → Bad.
 func TestStatisticsTrackCountsOff(t *testing.T) {
 	got := runStatistics(map[string]string{
 		"track_io_timing":          "on",
@@ -59,7 +51,6 @@ func TestStatisticsTrackCountsOff(t *testing.T) {
 	}
 }
 
-// TestStatisticsTrackCountsOn: track_counts=on → no track_counts advice.
 func TestStatisticsTrackCountsOn(t *testing.T) {
 	got := runStatistics(map[string]string{
 		"track_io_timing":          "on",
@@ -73,10 +64,6 @@ func TestStatisticsTrackCountsOn(t *testing.T) {
 	}
 }
 
-// --- pg_stat_statements -------------------------------------------------------
-
-// TestStatisticsPGStatStatementsAbsent: pg_stat_statements NOT in
-// shared_preload_libraries → Info.
 func TestStatisticsPGStatStatementsAbsent(t *testing.T) {
 	got := runStatistics(map[string]string{
 		"track_io_timing":          "on",
@@ -97,8 +84,6 @@ func TestStatisticsPGStatStatementsAbsent(t *testing.T) {
 	}
 }
 
-// TestStatisticsPGStatStatementsPresent: pg_stat_statements in
-// shared_preload_libraries → no pg_stat_statements advice.
 func TestStatisticsPGStatStatementsPresent(t *testing.T) {
 	got := runStatistics(map[string]string{
 		"track_io_timing":          "on",
@@ -112,8 +97,6 @@ func TestStatisticsPGStatStatementsPresent(t *testing.T) {
 	}
 }
 
-// TestStatisticsPGStatStatementsAmongOthers: pg_stat_statements alongside other
-// extensions in shared_preload_libraries → no advice.
 func TestStatisticsPGStatStatementsAmongOthers(t *testing.T) {
 	got := runStatistics(map[string]string{
 		"track_io_timing":          "on",
@@ -127,14 +110,10 @@ func TestStatisticsPGStatStatementsAmongOthers(t *testing.T) {
 	}
 }
 
-// TestStatisticsSharedPreloadLibrariesAbsentKey: shared_preload_libraries key
-// missing entirely from settings → no pg_stat_statements advice (can't check
-// what we can't read).
 func TestStatisticsSharedPreloadLibrariesAbsentKey(t *testing.T) {
 	got := runStatistics(map[string]string{
 		"track_io_timing": "on",
 		"track_counts":    "on",
-		// shared_preload_libraries key is absent
 	})
 	for _, a := range got {
 		if a.Title == "pg_stat_statements is not loaded" {
@@ -143,9 +122,6 @@ func TestStatisticsSharedPreloadLibrariesAbsentKey(t *testing.T) {
 	}
 }
 
-// --- OK fallthrough -----------------------------------------------------------
-
-// TestStatisticsAllHealthy: all settings correct → OK.
 func TestStatisticsAllHealthy(t *testing.T) {
 	got := runStatistics(map[string]string{
 		"track_io_timing":          "on",
@@ -157,8 +133,6 @@ func TestStatisticsAllHealthy(t *testing.T) {
 	}
 }
 
-// TestStatisticsMultipleFire: track_io_timing=off AND track_counts=off → both
-// Info and Bad fire together.
 func TestStatisticsMultipleFire(t *testing.T) {
 	got := runStatistics(map[string]string{
 		"track_io_timing":          "off",

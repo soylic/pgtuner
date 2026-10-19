@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# version-matrix.sh — Spin disposable PG instances (14-18) on alt ports and run
-# pgtuner -format json against each. Verifies valid JSON and no "column does not exist"
-# or SQL query errors from the version-branched checks. Leaves oremedy-test-pg
+# version-matrix.sh: start disposable PG 14-18 instances on alternate ports and run
+# pgtuner -format json on each. Checks for valid JSON and for no "column does not exist"
+# or other SQL errors from the version-specific checks. Leaves oremedy-test-pg
 # (and any container on :5432) untouched.
 #
-# Exit 0 = MATRIX PASS, Exit 1 = MATRIX FAIL.
+# Exit 0 = MATRIX PASS, exit 1 = MATRIX FAIL.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -22,16 +22,16 @@ fail=0
 for v in 14 15 16 17 18; do
   img="postgres:${v}-alpine"
   if ! docker image inspect "$img" >/dev/null 2>&1; then
-    echo ">> pulling $img"
+    echo ">> pulling image $img"
     if ! docker pull "$img" 2>/dev/null; then
-      echo "!! skip PG${v} (image unavailable)"
+      echo "!! PG${v} skipped: the image is not available"
       continue
     fi
   fi
 
   port="${PORTS[$v]}"
 
-  # Ensure no stale container is holding the port from a previous failed run.
+  # A failed earlier run can leave a container on the port.
   docker ps -q --filter "publish=${port}" | xargs -r docker stop >/dev/null 2>&1 || true
 
   cid=$(docker run -d --rm \
@@ -44,18 +44,13 @@ for v in 14 15 16 17 18; do
   cleanup() { docker stop "$cid" >/dev/null 2>&1 || true; }
   trap cleanup EXIT
 
-  echo ">> PG${v} starting (container ${cid:0:12} on :${port})"
+  echo ">> PG${v} starting (container ${cid:0:12} on port ${port})"
 
-  # Wait up to 30 s for the server to accept TCP connections.
-  # pg_isready may return true while the server is still initialising the
-  # authentication layer; add a second phase that does an actual SQL query
-  # (SELECT 1) via psql to confirm the server is truly ready.
+  # Wait up to 30 s. pg_isready can succeed before authentication is ready, so also run SELECT 1.
   ready=0
   for i in $(seq 1 30); do
     if docker exec "$cid" pg_isready -U t >/dev/null 2>&1; then
-      # Extra check: actually connect and run a trivial query. This avoids the
-      # race where pg_isready returns 0 but the server resets the first real
-      # connection (TLS negotiation not complete yet).
+      # Without this query, the server can reset the first real connection.
       if docker exec "$cid" psql -U t -d t -c "SELECT 1" >/dev/null 2>&1; then
         ready=1
         break
@@ -65,7 +60,7 @@ for v in 14 15 16 17 18; do
   done
 
   if [ "$ready" -eq 0 ]; then
-    echo "!! PG${v}: server did not become ready in 30 s"; fail=1
+    echo "!! PG${v}: the server was not ready after 30 s"; fail=1
     cleanup; trap - EXIT
     continue
   fi
@@ -80,30 +75,26 @@ for v in 14 15 16 17 18; do
   rc=$?
   set -e
 
-  # Exit codes 0 and 1 are both acceptable:
-  #   0 = no Bad-level advice, 1 = Bad advice present (e.g. fsync=off on ephemeral PG)
-  #   >=2 = tool-level error (connection failure, JSON encode error, etc.)
+  # Exit codes 0 and 1 are both acceptable.
+  # 1 means Bad advice is present (for example fsync=off). 2 or more is a tool error.
   if [ "$rc" -ge 2 ]; then
-    echo "!! PG${v}: pgtuner failed with exit $rc"
+    echo "!! PG${v}: pgtuner exited with code $rc"
     cat "$err_out"
     fail=1
     cleanup; trap - EXIT
     continue
   fi
 
-  # Check the .err file for SQL-level errors (column/relation does not exist, etc.)
-  # We only grep the stderr for actual query errors, NOT the JSON body.
+  # Grep only stderr for query errors, not the JSON body.
   if grep -qiE '(column|relation|table|function|operator) .* does not exist|ERROR:' "$err_out" 2>/dev/null; then
-    echo "!! PG${v}: SQL/column error detected in stderr:"
+    echo "!! PG${v}: stderr shows an SQL or column error:"
     cat "$err_out"
     fail=1
   else
-    echo "ok PG${v}: pgtuner ran successfully (exit ${rc})"
+    echo "ok PG${v}: pgtuner ran (exit code ${rc})"
   fi
 
-  # Validate JSON and confirm zero unknown-level advice via the summary field.
-  # The python check is authoritative for unknown-advice detection; the grep
-  # above only catches hard SQL errors in stderr.
+  # The Python check is the authority for Unknown advice. The grep above catches only SQL errors.
   if ! python3 - <<PYEOF 2>/dev/null
 import json, sys
 with open("${out}") as f:
@@ -115,7 +106,7 @@ if unknown_count > 0:
 sys.exit(0)
 PYEOF
   then
-    echo "!! PG${v}: invalid JSON or unknown-level advice present in summary"
+    echo "!! PG${v}: the JSON is not valid, or the summary shows Unknown advice"
     fail=1
   fi
 

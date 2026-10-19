@@ -7,12 +7,10 @@ import (
 func TestDefaultRegistry(t *testing.T) {
 	r := Default()
 
-	// Must contain exactly 22 checks.
-	if len(r) != 22 {
-		t.Fatalf("Default() returned %d checks, want 22", len(r))
+	if len(r) != 23 {
+		t.Fatalf("Default() returned %d checks, want 23", len(r))
 	}
 
-	// Every check must have a non-empty, unique name.
 	seen := make(map[string]bool, len(r))
 	for i, c := range r {
 		name := c.Name()
@@ -31,18 +29,16 @@ func TestRegistryScopeSplit(t *testing.T) {
 	cluster := ClusterWide()
 	perDB := PerDatabase()
 
-	// Counts must add up to the full registry size with no overlap.
 	if len(cluster)+len(perDB) != len(def) {
 		t.Fatalf("cluster(%d)+perDB(%d) != Default(%d)", len(cluster), len(perDB), len(def))
 	}
-	if len(def) != 22 {
-		t.Fatalf("Default() has %d checks, want 22", len(def))
+	if len(def) != 23 {
+		t.Fatalf("Default() has %d checks, want 23", len(def))
 	}
-	if len(cluster) != 16 {
-		t.Fatalf("ClusterWide() has %d checks, want 16", len(cluster))
+	if len(cluster) != 17 {
+		t.Fatalf("ClusterWide() has %d checks, want 17", len(cluster))
 	}
 
-	// Every cluster check is ClusterScope; every perDB check is DatabaseScope.
 	for _, c := range cluster {
 		if c.Scope() != ClusterScope {
 			t.Errorf("ClusterWide() contains non-cluster check %q", c.Name())
@@ -54,7 +50,6 @@ func TestRegistryScopeSplit(t *testing.T) {
 		}
 	}
 
-	// No overlap by name, and the union equals Default() exactly (same names).
 	union := make(map[string]bool)
 	for _, c := range cluster {
 		if union[c.Name()] {
@@ -79,7 +74,7 @@ func TestRegistryScopeSplit(t *testing.T) {
 
 	// The expected per-database set per the design. The cluster-wide settings
 	// halves of storage and autovacuum (storage_settings, autovacuum_settings)
-	// are NOT here — only the genuinely per-database stats checks are.
+	// are NOT here, only the genuinely per-database stats checks are.
 	wantPerDB := map[string]bool{
 		"cache": true, "schema": true, "storage": true,
 		"autovacuum": true, "workload": true, "querystats": true,

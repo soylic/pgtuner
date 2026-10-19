@@ -7,9 +7,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/OpenRemedy/pgtuner/internal/osinspect"
-	"github.com/OpenRemedy/pgtuner/internal/pg"
-	"github.com/OpenRemedy/pgtuner/pkg/pgtuner"
+	"github.com/soylic/pgtuner/internal/osinspect"
+	"github.com/soylic/pgtuner/internal/pg"
+	"github.com/soylic/pgtuner/pkg/pgtuner"
 )
 
 func TestAutovacuumIntegration(t *testing.T) {
@@ -37,7 +37,6 @@ func TestAutovacuumIntegration(t *testing.T) {
 		OS:       osinspect.NoopInspector{},
 	}
 
-	// Cluster-wide settings half.
 	gotSettings := AutovacuumSettingsCheck{}.Run(ctx, probe)
 	if len(gotSettings) == 0 {
 		t.Fatal("expected at least one advice from AutovacuumSettingsCheck, got none")
@@ -49,7 +48,6 @@ func TestAutovacuumIntegration(t *testing.T) {
 	}
 	t.Logf("AutovacuumSettingsCheck returned %d advice item(s): %v", len(gotSettings), levelsOf(gotSettings))
 
-	// Per-database stats half.
 	got := AutovacuumCheck{}.Run(ctx, probe)
 	if len(got) == 0 {
 		t.Fatal("expected at least one advice from AutovacuumCheck, got none")

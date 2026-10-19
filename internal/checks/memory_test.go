@@ -6,12 +6,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OpenRemedy/pgtuner/internal/osinspect"
-	"github.com/OpenRemedy/pgtuner/internal/pg"
-	"github.com/OpenRemedy/pgtuner/pkg/pgtuner"
+	"github.com/soylic/pgtuner/internal/osinspect"
+	"github.com/soylic/pgtuner/internal/pg"
+	"github.com/soylic/pgtuner/pkg/pgtuner"
 )
 
-// helper: build Probe for memory checks.
 func runMemory(settings map[string]string, os osinspect.Inspector, major, minor int) []pgtuner.Advice {
 	p := &Probe{
 		Settings: pg.NewSettings(settings),
@@ -82,7 +81,7 @@ func TestMemorySharedBufsOK(t *testing.T) {
 
 // TestMemoryMaintenanceWorkMemLow: 32 MiB on 16 GiB host → Info.
 func TestMemoryMaintenanceWorkMemLow(t *testing.T) {
-	sbBlocks := int64(blocks8kPerGiB * 4) // 25% — fine
+	sbBlocks := int64(blocks8kPerGiB * 4) // 25%, fine
 	got := runMemory(map[string]string{
 		"shared_buffers":       fmt.Sprint(sbBlocks),
 		"effective_cache_size": fmt.Sprint(blocks8kPerGiB * 10),
@@ -142,8 +141,8 @@ func TestMemoryConstrainedCgroupMessage(t *testing.T) {
 	sbBlocks := int64(blocks8kPerGiB * 4 / 10) // ~10% of 4 GiB
 	got := runMemory(map[string]string{
 		"shared_buffers":       fmt.Sprint(sbBlocks),
-		"effective_cache_size": fmt.Sprint(blocks8kPerGiB * 3), // 75% of 4 GiB — fine
-		"maintenance_work_mem": fmt.Sprint(kbPerGiB),           // 1 GiB — fine
+		"effective_cache_size": fmt.Sprint(blocks8kPerGiB * 3), // 75% of 4 GiB, fine
+		"maintenance_work_mem": fmt.Sprint(kbPerGiB),           // 1 GiB, fine
 	}, fakeOS{effMem: cgroupLimitBytes, effMemConstrained: true}, 16, 0)
 
 	if !hasLevel(got, pgtuner.Warn) {

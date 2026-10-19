@@ -3,10 +3,8 @@ package checks
 import (
 	"testing"
 
-	"github.com/OpenRemedy/pgtuner/pkg/pgtuner"
+	"github.com/soylic/pgtuner/pkg/pgtuner"
 )
-
-// ----- capList ---------------------------------------------------------------
 
 func TestCapList_BelowCap(t *testing.T) {
 	items := []string{"a", "b", "c"}
@@ -51,10 +49,7 @@ func TestCapList_Empty(t *testing.T) {
 	}
 }
 
-// ----- evalUnusedIndexes -----------------------------------------------------
-
 func TestEvalUnusedIndexes_None(t *testing.T) {
-	// No rows → no advice.
 	out := evalUnusedIndexes(nil)
 	if len(out) != 0 {
 		t.Fatalf("expected no advice for empty rows, got %v", levelsOf(out))
@@ -62,8 +57,6 @@ func TestEvalUnusedIndexes_None(t *testing.T) {
 }
 
 func TestEvalUnusedIndexes_OneRow_Info(t *testing.T) {
-	// One unused index → Info.
-	// src: https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STAT-ALL-INDEXES-VIEW
 	rows := []UnusedIndexRow{
 		{SchemaName: "public", RelName: "orders", IndexName: "idx_orders_old", SizeBytes: 2 * 1024 * 1024},
 	}
@@ -77,7 +70,6 @@ func TestEvalUnusedIndexes_OneRow_Info(t *testing.T) {
 }
 
 func TestEvalUnusedIndexes_ManyRows_Capped(t *testing.T) {
-	// More than cap rows → message should not list all.
 	var rows []UnusedIndexRow
 	for i := 0; i < schemaMessageCap+5; i++ {
 		rows = append(rows, UnusedIndexRow{
@@ -91,13 +83,10 @@ func TestEvalUnusedIndexes_ManyRows_Capped(t *testing.T) {
 	if len(out) == 0 || out[0].Level != pgtuner.Info {
 		t.Fatalf("expected Info for many unused indexes, got %v", levelsOf(out))
 	}
-	// Message should mention "more"
 	if !containsStr(out[0].Message, "more") {
 		t.Errorf("expected message to mention 'more' when capped, got: %s", out[0].Message)
 	}
 }
-
-// ----- evalInvalidIndexes ----------------------------------------------------
 
 func TestEvalInvalidIndexes_None(t *testing.T) {
 	out := evalInvalidIndexes(nil)
@@ -107,8 +96,6 @@ func TestEvalInvalidIndexes_None(t *testing.T) {
 }
 
 func TestEvalInvalidIndexes_OneRow_Warn(t *testing.T) {
-	// One invalid index → Warn.
-	// src: https://www.postgresql.org/docs/current/sql-createindex.html
 	rows := []InvalidIndexRow{
 		{SchemaName: "public", RelName: "orders", IndexName: "idx_orders_broken"},
 	}
@@ -132,8 +119,6 @@ func TestEvalInvalidIndexes_MultipleRows_Warn(t *testing.T) {
 	}
 }
 
-// ----- evalDuplicateIndexes --------------------------------------------------
-
 func TestEvalDuplicateIndexes_None(t *testing.T) {
 	out := evalDuplicateIndexes(nil)
 	if len(out) != 0 {
@@ -142,8 +127,6 @@ func TestEvalDuplicateIndexes_None(t *testing.T) {
 }
 
 func TestEvalDuplicateIndexes_OneGroup_Info(t *testing.T) {
-	// One group of duplicates → Info.
-	// src: https://www.postgresql.org/docs/current/catalog-pg-index.html
 	groups := []DuplicateIndexGroup{
 		{RelName: "orders", IndexNames: []string{"idx_orders_a", "idx_orders_b"}},
 	}
@@ -167,8 +150,6 @@ func TestEvalDuplicateIndexes_MultipleGroups_Info(t *testing.T) {
 	}
 }
 
-// ----- evalNoPrimaryKey -------------------------------------------------------
-
 func TestEvalNoPrimaryKey_None(t *testing.T) {
 	out := evalNoPrimaryKey(nil)
 	if len(out) != 0 {
@@ -177,8 +158,6 @@ func TestEvalNoPrimaryKey_None(t *testing.T) {
 }
 
 func TestEvalNoPrimaryKey_OneRow_Info(t *testing.T) {
-	// One table without PK → Info.
-	// src: https://www.postgresql.org/docs/current/ddl-constraints.html
 	rows := []NoPKRow{
 		{SchemaName: "public", RelName: "log_table", SizeBytes: 5 * 1024 * 1024},
 	}
@@ -202,8 +181,6 @@ func TestEvalNoPrimaryKey_MultipleRows_Info(t *testing.T) {
 	}
 }
 
-// ----- evalFKWithoutIndex ----------------------------------------------------
-
 func TestEvalFKWithoutIndex_None(t *testing.T) {
 	out := evalFKWithoutIndex(nil)
 	if len(out) != 0 {
@@ -212,8 +189,6 @@ func TestEvalFKWithoutIndex_None(t *testing.T) {
 }
 
 func TestEvalFKWithoutIndex_OneRow_Info(t *testing.T) {
-	// One FK without index → Info.
-	// src: https://www.postgresql.org/docs/current/ddl-constraints.html
 	rows := []FKNoIndexRow{
 		{SchemaName: "public", RelName: "order_items", ConstraintName: "order_items_order_id_fkey"},
 	}
@@ -237,8 +212,6 @@ func TestEvalFKWithoutIndex_MultipleRows_Info(t *testing.T) {
 	}
 }
 
-// ----- evalNeverAnalyzed -----------------------------------------------------
-
 func TestEvalNeverAnalyzed_None(t *testing.T) {
 	out := evalNeverAnalyzed(nil)
 	if len(out) != 0 {
@@ -247,8 +220,6 @@ func TestEvalNeverAnalyzed_None(t *testing.T) {
 }
 
 func TestEvalNeverAnalyzed_OneRow_Warn(t *testing.T) {
-	// One never-analyzed table → Warn.
-	// src: https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STAT-ALL-TABLES-VIEW
 	rows := []NeverAnalyzedRow{
 		{SchemaName: "public", RelName: "events", LiveTuples: 50_000, NeverVacuum: false},
 	}
@@ -262,7 +233,6 @@ func TestEvalNeverAnalyzed_OneRow_Warn(t *testing.T) {
 }
 
 func TestEvalNeverAnalyzed_NeverVacuumedFlag(t *testing.T) {
-	// NeverVacuum=true should be reflected in the message.
 	rows := []NeverAnalyzedRow{
 		{SchemaName: "public", RelName: "events", LiveTuples: 50_000, NeverVacuum: true},
 	}
@@ -285,8 +255,6 @@ func TestEvalNeverAnalyzed_MultipleRows_Warn(t *testing.T) {
 		t.Fatalf("expected Warn for multiple never-analyzed tables, got %v", levelsOf(out))
 	}
 }
-
-// ----- evalBloat -------------------------------------------------------------
 
 func TestEvalBloat_None(t *testing.T) {
 	out := evalBloat(nil)
@@ -319,8 +287,6 @@ func TestEvalBloat_AtRatioThreshold_NoAdvice(t *testing.T) {
 }
 
 func TestEvalBloat_AboveRatioThreshold_LargeTable_Warn(t *testing.T) {
-	// dead_ratio > 20% AND size > 1MiB → Warn.
-	// src: https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STAT-ALL-TABLES-VIEW
 	rows := []BloatRow{
 		{SchemaName: "public", RelName: "orders", DeadTuples: 3000, LiveTuples: 7000, SizeBytes: 5 * 1024 * 1024},
 	}
@@ -338,7 +304,6 @@ func TestEvalBloat_AboveRatioThreshold_LargeTable_Warn(t *testing.T) {
 }
 
 func TestEvalBloat_AboveRatioThreshold_SmallTable_NoAdvice(t *testing.T) {
-	// dead_ratio > 20% but size < 1MiB → no advice (too small to matter).
 	rows := []BloatRow{
 		{SchemaName: "public", RelName: "tiny", DeadTuples: 300, LiveTuples: 700, SizeBytes: 512 * 1024},
 	}
@@ -349,7 +314,6 @@ func TestEvalBloat_AboveRatioThreshold_SmallTable_NoAdvice(t *testing.T) {
 }
 
 func TestEvalBloat_ZeroTotal_NoAdvice(t *testing.T) {
-	// total = 0 → guard path → no advice.
 	rows := []BloatRow{
 		{SchemaName: "public", RelName: "empty", DeadTuples: 0, LiveTuples: 0, SizeBytes: 5 * 1024 * 1024},
 	}
@@ -369,8 +333,6 @@ func TestEvalBloat_MultipleOffenders_Warn(t *testing.T) {
 		t.Fatalf("expected Warn for multiple bloated tables, got %v", levelsOf(out))
 	}
 }
-
-// ----- evalLargestRelations --------------------------------------------------
 
 func TestEvalLargestRelations_None(t *testing.T) {
 	out := evalLargestRelations(nil)
@@ -402,7 +364,6 @@ func TestEvalLargestRelations_SizeInMessage(t *testing.T) {
 	if len(out) == 0 {
 		t.Fatal("expected at least one advice item")
 	}
-	// Message should contain the table name.
 	if !containsStr(out[0].Message, "big_table") {
 		t.Errorf("expected message to contain table name 'big_table', got: %s", out[0].Message)
 	}

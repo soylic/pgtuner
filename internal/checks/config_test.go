@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OpenRemedy/pgtuner/pkg/pgtuner"
+	"github.com/soylic/pgtuner/pkg/pgtuner"
 )
 
 // findLevel reports whether any advice in a has the given level.
@@ -16,8 +16,6 @@ func findLevel(a []pgtuner.Advice, want pgtuner.Level) bool {
 	}
 	return false
 }
-
-// ----- evalPendingRestart -----------------------------------------------------
 
 func TestEvalPendingRestart(t *testing.T) {
 	if got := evalPendingRestart(nil); got != nil {
@@ -52,8 +50,6 @@ func TestEvalPendingRestartCap(t *testing.T) {
 		t.Errorf("expected capped summary, got %q", got[0].Message)
 	}
 }
-
-// ----- evalParallelism --------------------------------------------------------
 
 func TestEvalParallelismPerGatherBoundary(t *testing.T) {
 	// per_gather == 0 with >1 CPU → Info (parallel disabled).
@@ -151,8 +147,6 @@ func TestEvalParallelismHealthy(t *testing.T) {
 	}
 }
 
-// ----- evalLoggingHygiene -----------------------------------------------------
-
 func TestEvalLoggingHygieneAllDisabled(t *testing.T) {
 	h := logHygiene{
 		logMinDurationStatement: -1,
@@ -214,8 +208,6 @@ func TestEvalLoggingHygieneCheckpointsAbsent(t *testing.T) {
 	}
 }
 
-// ----- evalTimeouts -----------------------------------------------------------
-
 func TestEvalTimeoutsAllZero(t *testing.T) {
 	// PG<17: three timeout Infos, no transaction_timeout.
 	got := evalTimeouts(timeoutSettings{statementTimeout: 0, idleInTxnTimeout: 0, lockTimeout: 0})
@@ -265,8 +257,6 @@ func TestEvalTimeoutsTransactionGate(t *testing.T) {
 		t.Errorf("PG<17 with timeouts set: want nil (no transaction_timeout), got %+v", got)
 	}
 }
-
-// ----- evalArchiver -----------------------------------------------------------
 
 func TestEvalArchiverHealthy(t *testing.T) {
 	// No failures, recent success → nil.
@@ -332,8 +322,6 @@ func TestEvalArchiverNeverRan(t *testing.T) {
 		t.Errorf("fresh archiver: want nil, got %+v", got)
 	}
 }
-
-// ----- evalOutdatedExtensions -------------------------------------------------
 
 func TestEvalOutdatedExtensions(t *testing.T) {
 	if got := evalOutdatedExtensions(nil); got != nil {

@@ -7,9 +7,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/OpenRemedy/pgtuner/internal/osinspect"
-	"github.com/OpenRemedy/pgtuner/internal/pg"
-	"github.com/OpenRemedy/pgtuner/pkg/pgtuner"
+	"github.com/soylic/pgtuner/internal/osinspect"
+	"github.com/soylic/pgtuner/internal/pg"
+	"github.com/soylic/pgtuner/pkg/pgtuner"
 )
 
 func TestReplicationIntegration(t *testing.T) {
@@ -49,7 +49,6 @@ func TestReplicationIntegration(t *testing.T) {
 	if len(got) == 0 {
 		t.Fatal("expected at least one advice, got none")
 	}
-	// No query-failure Unknowns expected against a healthy PG16 instance.
 	for _, a := range got {
 		if a.Level == pgtuner.Unknown {
 			t.Errorf("ReplicationCheck returned Unknown (query failure): %+v", a)
@@ -57,7 +56,6 @@ func TestReplicationIntegration(t *testing.T) {
 	}
 	t.Logf("ReplicationCheck returned %d advice item(s): %v", len(got), levelsOf(got))
 
-	// The dev PG16 is standalone → the first advice must be the Standalone role Info.
 	if role.Role == pg.RoleStandalone {
 		found := false
 		for _, a := range got {
